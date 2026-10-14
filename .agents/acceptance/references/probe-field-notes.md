@@ -496,7 +496,7 @@ executionTarget: 'local'` in `agencyConfig`) + one message per case asking CC to
   - **Postgres**: local brew Postgres 17 (pgvector available). The only paradedb-specific
     migrations are `0090_enable_pg_search` / `0093_add_bm25_indexes_with_icu` — no-op them
     in the worktree (`SELECT 1;`), everything else applies clean.
-  - **Redis is a hard dependency of Better Auth sign-in** — with a dead REDIS\_URL the seed
+  - **Redis is a hard dependency of Better Auth sign-in** — with a dead REDIS_URL the seed
     login 500s (`[Better Auth]: Error: Connection is closed`). `brew install redis`,
     `redis-server --port 6380 --daemonize yes`.
   - **S3**: `s3rver` (npm) on 29000 with a CORS config for the bucket. Its presigned-URL
@@ -701,6 +701,7 @@ executionTarget: 'local'` in `agencyConfig`) + one message per case asking CC to
 - **Situation**: verifying a **client-only** builtin tool (`executors: ['client']`) via a real agent turn on the desktop. The agent's `executionTarget` is `local` and the tool-enable gate (`isLocalSystemEnabled` = runtime `local`) passes, so it _looks_ like it will run client-side.
 - **Doesn't work**: sending the message as-is. On a cloud-connected desktop, gateway mode is on by default, so the run dispatches to `execServerAgentRuntime` (server/queue path) even for a `local` agent. The client-only tool isn't executable there — the model flails and returns a non-answer (e.g. "browser closed") with no real tool effect. Confirm the path by reading the running op's `type` in `window.__LOBE_STORES.chat().operations` (`execServerAgentRuntime` = server; `executeToolCall` = client).
 - **Works**: set the agent's `chatConfig.disableGatewayMode = true` (via `agentStore.updateAgentChatConfigById(id, { disableGatewayMode: true })`) before sending. The run then goes through `executeToolCall` (client runtime); the composer's runtime chip flips to "Local device" and the client executor runs. The gate (`isLocalSystemEnabled`) and the transport (`disableGatewayMode`) are INDEPENDENT — enabling the tool does not force client execution.
+- **Obsolete since the client runtime removal (feat/remove-client-runtime, 2026-10)**: `disableGatewayMode` is ignored and no agent run executes in the renderer. Every non-hetero run is `execServerAgentRuntime`; a tool the model calls during it executes on the server or is dispatched to the device through the device gateway. Verify a device-side tool through that server→device path (probe-mock-patterns.md P90), not by forcing client execution.
 
 ### E19. Desktop has no classic session store — reconfigure the existing agent, don't `createSession`
 
@@ -745,7 +746,7 @@ executionTarget: 'local'` in `agencyConfig`) + one message per case asking CC to
 - **Read the cause from `async_tasks.error`, not the toast**: `docker exec <pg> psql -U postgres -d postgres -c "select status, error from async_tasks order by created_at desc limit 3;"`.
 - **Three separate walls, in the order you hit them**:
   1. `start async task error: JWKS_KEY environment variable is not set` → see E22. The bootstrap now exports a persisted `JWKS_KEY`; you only hit this on a server started outside `init-dev-env.sh`.
-  2. `InvalidProviderAPIKey` → the seeded user's stored `ai_providers.key_vaults` may hold a key encrypted with a different `KEY_VAULTS_SECRET`. Clear it (`update ai_providers set key_vaults = null where id = '<provider>'`) so the server env key is used; provide `<PROVIDER>_API_KEY` plus, for a relay endpoint, `<PROVIDER>_PROXY_URL` (`apps/server/src/modules/ModelRuntime/index.ts` reads `process.env[`${UPPER}\_PROXY\_URL`]`).
+  2. `InvalidProviderAPIKey` → the seeded user's stored `ai_providers.key_vaults` may hold a key encrypted with a different `KEY_VAULTS_SECRET`. Clear it (`update ai_providers set key_vaults = null where id = '<provider>'`) so the server env key is used; provide `<PROVIDER>_API_KEY` plus, for a relay endpoint, `<PROVIDER>_PROXY_URL` (`apps/server/src/modules/ModelRuntime/index.ts` reads `process.env[`${UPPER}\_PROXY_URL`]`).
   3. `SSRF blocked: ... is not allowed. Because, It is private IP address.` → any reference image living in the local s3rver is fetched **server-side**. The bootstrap now exports `SSRF_ALLOW_PRIVATE_IP_ADDRESS=1`; set it yourself on a server started another way.
 - **Then note which model the product actually picked** before attributing quality or format to a model: read the product's own selector rather than assuming (`selectAgentArtworkModel(enabledImageModelList(...))` over CDP). Disabling a provider row is enough to change the pick.
 - **Style presets that attach reference images can still fail after all three**: local presigned URLs may return an S3 XML error body, which reaches the model as `Unsupported MIME type: application/xml`. Pick a preset with no reference images to test generation itself.
@@ -788,7 +789,7 @@ nodeintegration, plugins, disablewebsecurity, allowpopups, preload, …`). The h
   conclusion. If a run "should" have hit your code and didn't, prove the server is running your
   code FIRST — drop a `console.error` on the path and restart — before debugging the code itself.
 
-### E27. ✅ `source`-ing an unquoted JSON env var silently corrupts it (JWKS\_KEY → gateway auth\_failed)
+### E27. ✅ `source`-ing an unquoted JSON env var silently corrupts it (JWKS_KEY → gateway auth_failed)
 
 - **Situation**: writing an env file for the local gateway loop with
   `JWKS_KEY={"keys":[{"kty":"RSA",...}]}` on one line, then `set -a; source that-file`.
@@ -821,10 +822,10 @@ nodeintegration, plugins, disablewebsecurity, allowpopups, preload, …`). The h
   and pick one from there. Also: a send that "resolves fine but creates no operation" is a UI-gate
   symptom; **screenshot the composer** instead of re-reading your store call.
 
-### E29. Fresh-worktree `seed-user` dies on `Cannot find module 'bcryptjs'` — NODE\_PATH into .pnpm fixes it
+### E29. Fresh-worktree `seed-user` dies on `Cannot find module 'bcryptjs'` — NODE_PATH into .pnpm fixes it
 
 - **Situation**: in a fresh git-worktree install, `init-dev-env.sh seed-user`
-  (which runs `node <<'NODE'` from the repo root) throws MODULE\_NOT\_FOUND for
+  (which runs `node <<'NODE'` from the repo root) throws MODULE_NOT_FOUND for
   `bcryptjs`, even though `pnpm install` succeeded.
 - **Cause not fully established**: `bcryptjs` exists in `node_modules/.pnpm/`
   but is not linked at the repo-root `node_modules` top level in that install
@@ -832,7 +833,7 @@ nodeintegration, plugins, disablewebsecurity, allowpopups, preload, …`). The h
   resolve it.
 - **Works**: prefix the call with
   `NODE_PATH="$PWD/node_modules/.pnpm/bcryptjs@<ver>/node_modules"` (check the
-  exact version dir first). CJS stdin scripts honor NODE\_PATH; seeding then
+  exact version dir first). CJS stdin scripts honor NODE_PATH; seeding then
   completes normally.
 - Same run also (re)confirmed: `init-dev-env.sh dev` ports are DYNAMIC (e.g.
   next on 33803, vite on 32459) — never hardcode 3010; re-run
@@ -850,6 +851,7 @@ nodeintegration, plugins, disablewebsecurity, allowpopups, preload, …`). The h
 
 ### E31. Web agent turns run the CLIENT runtime — no `agent_operations` row will appear
 
+- **Obsolete since the client runtime removal (feat/remove-client-runtime, 2026-10)**: web turns now always run on the server over the Agent Gateway and do write an `agent_operations` row; without a gateway the send fails ("no Agent Gateway configured"). Poll `agent_operations` (or the chat-store `execServerAgentRuntime` op) for web turns too. The notes below are history.
 - **Situation**: driving a real web turn and polling `agent_operations` for the run.
 - **Doesn't work**: waiting for a server operation when the web surface dispatched the client runtime.
 - **Works**: use client observables (`messages.model`, thread ids, and chat-store operations) for web;
@@ -953,7 +955,7 @@ posix_spawn '<cmd>'` — NOT node's `spawn <cmd> ENOENT`. Any stderr-text patter
   Telegram/Slack/Discord. A real bind needs a live bot issuing a `random_id` link token —
   unavailable in an isolated env.
 - **Works**: take the page's own refresh-after-link path instead. With a signed-in user, seed
-  (1) a `messenger_account_links` row for (user, platform, tenant\_id='') and (2) an enabled
+  (1) a `messenger_account_links` row for (user, platform, tenant_id='') and (2) an enabled
   `system_bot_providers` row for the platform — `credentials` must be encrypted with
   `KeyVaultsGateKeeper.initWithEnvKey()` (same `KEY_VAULTS_SECRET` as the dev server), e.g.
   telegram `{ botToken, botUsername }`. Then open
@@ -962,7 +964,7 @@ posix_spawn '<cmd>'` — NOT node's `spawn <cmd> ENOENT`. Any stderr-text patter
   (`shouldShowSingleAccountSuccess` — existing link + no active token → success).
 - `botUsername` drives the "Open in <platform>" deep-link CTA; re-encrypt the credentials
   WITHOUT it to exercise the no-deep-link fallback. Note the platform config is cached
-  in-process for 30s (`packages/app-config/src/messenger.ts` CACHE\_TTL\_MS) — wait out the TTL
+  in-process for 30s (`packages/app-config/src/messenger.ts` CACHE_TTL_MS) — wait out the TTL
   after editing the row before reloading.
 - Locale for evidence shots: `window.__LOBE_STORES.global().switchLocale('zh-CN')` then reload.
 
@@ -991,7 +993,7 @@ an action against the wrong row. For drag interactions (annotation canvases), di
 `MouseEvent`s (`mousedown/mousemove/mouseup` with `bubbles:true` and computed `clientX/Y`) on the
 target element.
 
-### E34. Shell proxy env (HTTP\_PROXY=127.0.0.1:7890) inherited by the dev server breaks auth with silent 307 loops
+### E34. Shell proxy env (HTTP_PROXY=127.0.0.1:7890) inherited by the dev server breaks auth with silent 307 loops
 
 **Situation**: `init-dev-env.sh dev` launched from a shell where a system proxy (Clash etc.) exported
 `HTTP_PROXY`/`HTTPS_PROXY`. The server booted fine, pages served, but `POST /api/auth/sign-in/email`
