@@ -9,7 +9,7 @@ user-invocable: false
 Canonical living examples, both extracted 2026-08 — read the real files, this skill records
 the decisions and landmines, not copies of the code:
 
-- **`apps/workbench`** (`/verify`, `/acceptance`) — all code in this repo, builds and deploys from OSS CI.
+- **`apps/workbench`** (`/acceptance`, `/agent/:aid/docs/:docId`; `/verify` only redirects retired report links into Acceptance) — all code in this repo, builds and deploys from OSS CI.
 - **`apps/share`** (`/share/t/:id`, `/share/page/:id`) — renders Cloud-only surfaces, so it
   builds and deploys from **lobehub-cloud** CI. See §1b before touching it.
 - **`apps/auth`** (`/signin`, `/signup`, …) — the SSG variant: `ssr: false` + `prerender`, so
@@ -353,10 +353,10 @@ RR v8 gotchas (docs/templates still say v7):
 ## 4. SEO
 
 One shared builder (`app/lib/seo.ts` → `buildPageMeta`): title, description, robots,
-og:title/description/type/site\_name/locale (underscore form)/image(+alt), twitter card set.
+og:title/description/type/site_name/locale (underscore form)/image(+alt), twitter card set.
 Rules: leaf `meta` **fully replaces** root meta — every leaf returns the whole set;
 `og:image` must be an **absolute URL** (reuse landing's `https://lobehub.com/assets/cao-og.webp`);
-dynamic title/description come from the route loader (subject title · BRANDING\_NAME,
+dynamic title/description come from the route loader (subject title · BRANDING_NAME,
 requirement text truncated \~200 chars).
 
 ## 5. Gateway Routing (torii, `../lobehub-gateway`)
@@ -372,7 +372,7 @@ To add a micro app:
    Leave `/trpc` unruled: it falls to `default` (app) so browser API calls stay same-origin
    authenticated. `.data` suffix is normalized before matching.
 4. Validate: `bun run test` in the gateway repo (invariant suite reads the mirror).
-5. Staging: `bun scripts/torii.ts push --env staging --expect <fp>` (needs TORII\_ACCESS\_\*),
+5. Staging: `bun scripts/torii.ts push --env staging --expect <fp>` (needs TORII_ACCESS\_\*),
    or poke staging KV directly (`wrangler kv key put --namespace-id <staging CONFIG ns>`) —
    README-sanctioned. Prod writes only via the Toriiban (鳥居番) admin **Promote** button:
    `torii.ts promote` prints the exact delta and refuses to write, and
