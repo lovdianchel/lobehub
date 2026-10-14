@@ -15,6 +15,7 @@ describe('server-default heterogeneous agent matrix', () => {
       'grok-build',
       'kimi-code',
       'pi',
+      'opencode',
       'trae',
     ]);
     expect(SERVER_DEFAULT_HETEROGENEOUS_AGENT_CONFIG).toEqual({
@@ -43,6 +44,11 @@ describe('server-default heterogeneous agent matrix', () => {
         modelPolicy: 'tool-capable',
         tokenHeader: 'bearer',
       },
+      'opencode': {
+        ingress: 'openai-responses',
+        modelPolicy: 'tool-capable',
+        tokenHeader: 'bearer',
+      },
       'trae': {
         ingress: 'openai-responses',
         modelPolicy: 'tool-capable',
@@ -59,7 +65,8 @@ describe('server-default heterogeneous agent matrix', () => {
     });
     expect(isServerDefaultHeterogeneousAgentType('pi')).toBe(true);
     expect(isServerDefaultHeterogeneousAgentType('trae')).toBe(true);
-    expect(isServerDefaultHeterogeneousAgentType('opencode')).toBe(false);
+    expect(isServerDefaultHeterogeneousAgentType('opencode')).toBe(true);
+    expect(isServerDefaultHeterogeneousAgentType('amp')).toBe(false);
     expect(isServerDefaultHeterogeneousAgentType('toString')).toBe(false);
     expect(getServerDefaultHeterogeneousAgentConfig(undefined)).toBeUndefined();
   });
