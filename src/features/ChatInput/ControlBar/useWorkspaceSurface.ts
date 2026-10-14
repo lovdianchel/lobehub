@@ -103,7 +103,7 @@ export const useWorkspaceSurface = (
 ): WorkspaceSurface[] => {
   const isHetero = useAgentStore(agentByIdSelectors.isAgentHeterogeneousById(agentId));
   const { agencyConfig, workspaceScoped } = useEffectiveAgencyConfig(agentId);
-  const deviceRoutingAvailable = useIsGatewayModeEnabled(agentId);
+  const deviceRoutingAvailable = useIsGatewayModeEnabled();
 
   return resolveWorkspaceSurface({
     agencyConfig,

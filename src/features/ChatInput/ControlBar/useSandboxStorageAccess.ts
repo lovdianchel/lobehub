@@ -37,7 +37,7 @@ export interface SandboxStorageAccessResult {
 const useRunsInSandbox = (agentId: string): boolean => {
   const isHetero = useAgentStore(agentByIdSelectors.isAgentHeterogeneousById(agentId));
   const { agencyConfig, workspaceScoped } = useEffectiveAgencyConfig(agentId);
-  const deviceRoutingAvailable = useIsGatewayModeEnabled(agentId);
+  const deviceRoutingAvailable = useIsGatewayModeEnabled();
 
   return (
     resolveExecutionTarget(agencyConfig, {

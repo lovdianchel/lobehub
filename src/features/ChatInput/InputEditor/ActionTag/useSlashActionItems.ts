@@ -71,7 +71,7 @@ export const useSlashActionItems = (): SlashOptions['items'] => {
   const isHetero = useAgentStore((s) =>
     agentId ? agentByIdSelectors.isAgentHeterogeneousById(agentId)(s) : false,
   );
-  const deviceRoutingAvailable = useIsGatewayModeEnabled(agentId);
+  const deviceRoutingAvailable = useIsGatewayModeEnabled();
   const isWorkspaceAgent = useAgentStore((s) =>
     agentId ? agentByIdSelectors.isWorkspaceAgentById(agentId)(s) : false,
   );
