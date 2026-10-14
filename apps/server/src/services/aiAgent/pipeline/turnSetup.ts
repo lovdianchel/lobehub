@@ -358,6 +358,7 @@ export interface TurnSetupInput {
   throwIfExecutionAborted: (stage: string) => Promise<void>;
   title?: string;
   trigger?: string;
+  userMessageEditorData?: Record<string, any>;
   userMessageMetadata?: SendUserMessageMetadata;
 }
 
@@ -445,6 +446,7 @@ export const setupTurn = async (
     throwIfExecutionAborted,
     title,
     trigger,
+    userMessageEditorData,
     userMessageMetadata,
   } = input;
 
@@ -881,6 +883,7 @@ export const setupTurn = async (
       const userMessageParams = {
         agentId: conversationAgentId,
         content: prompt,
+        editorData: userMessageEditorData,
         files: runAttachments.fileIds,
         // Group reads filter on messages.groupId (MessageModel.query group
         // branch), so a group turn must stamp groupId or the message never
