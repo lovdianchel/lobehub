@@ -13,6 +13,11 @@ interface ServerDefaultHeterogeneousAgentConfig {
 }
 
 export const SERVER_DEFAULT_HETEROGENEOUS_AGENT_CONFIG = {
+  'droid': {
+    ingress: 'anthropic-messages',
+    modelPolicy: 'tool-capable',
+    tokenHeader: 'x-api-key',
+  },
   'claude-code': {
     ingress: 'anthropic-messages',
     modelPolicy: 'tool-capable',
