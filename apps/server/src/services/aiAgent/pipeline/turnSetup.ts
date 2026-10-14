@@ -9,11 +9,13 @@ import type {
   FileAccessScope,
   HeterogeneousProviderConfig,
   HeterogeneousTopicPin,
+  SendUserMessageMetadata,
 } from '@lobechat/types';
 import {
   agentShareFileAccessScope,
   ChatErrorType,
   ordinaryFileAccessScope,
+  pickSendUserMessageMetadata,
   RequestTrigger,
   resolveHeterogeneousProviderTopicModel,
 } from '@lobechat/types';
@@ -356,6 +358,7 @@ export interface TurnSetupInput {
   throwIfExecutionAborted: (stage: string) => Promise<void>;
   title?: string;
   trigger?: string;
+  userMessageMetadata?: SendUserMessageMetadata;
 }
 
 export interface TurnSetupResult {
@@ -442,6 +445,7 @@ export const setupTurn = async (
     throwIfExecutionAborted,
     title,
     trigger,
+    userMessageMetadata,
   } = input;
 
   let topicId = appContext?.topicId;
@@ -882,7 +886,11 @@ export const setupTurn = async (
         // branch), so a group turn must stamp groupId or the message never
         // shows when the topic is reopened (group topic sidebar + ownership fix).
         groupId: appContext?.groupId ?? undefined,
-        metadata: requestTriggerMetadata,
+        // Selected context rides on the user row, where the injectors read it.
+        metadata: {
+          ...requestTriggerMetadata,
+          ...pickSendUserMessageMetadata(userMessageMetadata),
+        },
         parentId: userMessageParentId,
         role: 'user' as const,
         threadId: appContext?.threadId ?? undefined,

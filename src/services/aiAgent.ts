@@ -9,6 +9,7 @@ import type {
   RuntimeMentionedAgent,
   ScheduleAgentRunParams,
   ScheduleAgentRunResult,
+  SendUserMessageMetadata,
   UserInterventionConfig,
 } from '@lobechat/types';
 
@@ -183,6 +184,8 @@ export interface ExecAgentTaskParams {
    */
   trigger?: string;
   userInterventionConfig?: UserInterventionConfig;
+  /** Selected page / code context and local-file snapshots for the user row the run creates. */
+  userMessageMetadata?: SendUserMessageMetadata;
 }
 
 /**
