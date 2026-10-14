@@ -1,6 +1,6 @@
 'use client';
 
-import { GOAL_BATCH_BREAK_OPTION } from '@lobechat/const/goal';
+import { GOAL_BATCH_BREAK_OPTION, GOAL_BATCH_RELEASE_OPTION } from '@lobechat/const/goal';
 import type { GoalDecisionOption } from '@lobechat/types';
 import { Center, Flexbox, Icon } from '@lobehub/ui';
 import { Avatar, Text, toast } from '@lobehub/ui/base-ui';
@@ -129,6 +129,9 @@ export const useGateOptionCopy = () => {
           }
           case GOAL_BATCH_BREAK_OPTION.newClass: {
             return t('goalProcess.decision.effect.newClassBatch');
+          }
+          case GOAL_BATCH_RELEASE_OPTION.release: {
+            return t('goalProcess.decision.effect.releaseBatch');
           }
           default: {
             return undefined;
