@@ -4123,7 +4123,7 @@ When I am ___, I need ___
   'tools.title': 'Skills',
   'tab.environments': 'Environments',
   'environments.desc':
-    'What a sandbox run needs around it: a repository, its setup, its variables. Each copy built from one keeps its own files between sessions.',
+    'How to set up a project: the repository to check out, the setup command, the variables. Initialize a folder on your drive from it when you create the folder in the directory picker.',
   'environments.create': 'New environment',
   'environments.cancel': 'Cancel',
   'environments.createFailed': 'Could not create the environment',
@@ -4226,7 +4226,7 @@ When I am ___, I need ___
     'This copy is being built, so it cannot be duplicated until the build finishes',
   'environments.instances.title': 'Copies',
   'environments.instances.desc':
-    'A copy is a working copy of this environment, with its own folder and its own installed packages. Conversations run inside a copy, and several can run side by side without touching each other.',
+    'Folders on your drive initialized from this environment. Each keeps its own files and installed packages, so conversations in different folders never overwrite each other.',
   'environments.instances.empty': 'No copies yet',
   'environments.instances.emptyHint':
     'Create one, then pick it under "Working Directory" in the chat input.',

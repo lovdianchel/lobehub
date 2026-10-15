@@ -65,7 +65,7 @@ export const useSandboxDirectorySource = ({
   onPickInstance,
   topicId,
 }: UseSandboxDirectorySourceOptions): DirectorySource => {
-  const { t } = useTranslation(['device', 'setting']);
+  const { t } = useTranslation(['device', 'setting', 'common']);
   const canEdit = useCanEditEnvironment();
   const workspaceId = useActiveWorkspaceId();
   const { mutate: globalMutate } = useSWRConfig();
@@ -121,6 +121,7 @@ export const useSandboxDirectorySource = ({
           title={t('workingDirectory.drive.delete')}
           onClick={() =>
             confirmModal({
+              cancelText: t('cancel', { ns: 'common' }),
               content: t('workingDirectory.drive.deleteConfirmContent'),
               okButtonProps: { danger: true },
               okText: t('workingDirectory.drive.delete'),
@@ -174,7 +175,7 @@ export const useSandboxDirectorySource = ({
       renderNewFolderOptions: ({ onChange, value }) => (
         <Flexbox gap={4}>
           <Flexbox horizontal align={'center'} gap={8}>
-            <Text fontSize={12} type={'secondary'}>
+            <Text fontSize={12} style={{ flex: 'none' }} type={'secondary'}>
               {t('workingDirectory.drive.initializeWith')}
             </Text>
             <EnvironmentSelect
@@ -243,12 +244,34 @@ export const useSandboxDirectorySource = ({
             const blocked =
               !!agentIsPublic && !!environment?.workspaceId && environment.visibility === 'private';
 
+            // The way out of "in use" sits on the row's second line rather
+            // than among its tags: the right edge is where hover actions
+            // overlay a row, and a button under them never gets the click.
+            const copyable = state === 'inUse' && !!environment && canEdit(environment);
+
             return {
-              description: blocked
-                ? t('workingDirectory.drive.privateBlocked')
-                : state === 'inUse'
-                  ? t('workingDirectory.drive.inUseDesc')
-                  : environment?.name,
+              description: blocked ? (
+                t('workingDirectory.drive.privateBlocked')
+              ) : state === 'inUse' ? (
+                <Flexbox horizontal align={'center'} gap={8}>
+                  <Text fontSize={12} type={'secondary'}>
+                    {t('workingDirectory.drive.inUseDesc')}
+                  </Text>
+                  {copyable && environment && (
+                    <Button
+                      size={'small'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void createCopy(environment.id);
+                      }}
+                    >
+                      {t('workingDirectory.drive.createCopy')}
+                    </Button>
+                  )}
+                </Flexbox>
+              ) : (
+                environment?.name
+              ),
               disabled: blocked,
               icon: PackageIcon,
               name: entry.name,
@@ -264,12 +287,7 @@ export const useSandboxDirectorySource = ({
               },
               path: entry.path,
               tags: (
-                <Flexbox
-                  horizontal
-                  align={'center'}
-                  gap={4}
-                  onClick={(event) => event.stopPropagation()}
-                >
+                <Flexbox horizontal align={'center'} gap={4}>
                   <Tag color={'processing'} size={'small'}>
                     {t('workingDirectory.drive.environmentBadge')}
                   </Tag>
@@ -277,11 +295,6 @@ export const useSandboxDirectorySource = ({
                     <Tag color={state === 'failed' ? 'error' : 'warning'} size={'small'}>
                       {t(`workingDirectory.drive.state.${state}`)}
                     </Tag>
-                  )}
-                  {state === 'inUse' && environment && canEdit(environment) && (
-                    <Button size={'small'} onClick={() => void createCopy(environment.id)}>
-                      {t('workingDirectory.drive.createCopy')}
-                    </Button>
                   )}
                 </Flexbox>
               ),

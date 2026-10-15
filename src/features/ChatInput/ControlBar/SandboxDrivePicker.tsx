@@ -124,10 +124,20 @@ const SandboxDrivePicker = memo<SandboxDrivePickerProps>(
     const persistent = isPersistentSelection(value);
 
     // The environment directory's own row, for its name and build state —
-    // from the database alone, so the chip never waits on a sandbox.
+    // from the database, so the chip never waits on a sandbox. While a build
+    // is running the poll also asks for its status: nothing calls back when a
+    // build ends, and that call is what settles the row, so a chip left to
+    // re-read the row alone would say "building" for good.
     const { data: instance, isLoading: instanceLoading } = useSWR(
       entitled && value.instanceId ? ['sandbox-drive-chip-instance', value.instanceId] : null,
-      () => sandboxStorageService.getInstance({ id: value.instanceId! }),
+      async () => {
+        const id = value.instanceId!;
+        const row = await sandboxStorageService.getInstance({ id });
+        if (row?.status !== 'pending' || !row.buildId) return row;
+
+        await sandboxStorageService.instanceBuildStatus({ id, topicId }).catch(() => undefined);
+        return sandboxStorageService.getInstance({ id });
+      },
       {
         refreshInterval: (latest) => (latest?.status === 'pending' ? BUILD_REFRESH_MS : 0),
       },
