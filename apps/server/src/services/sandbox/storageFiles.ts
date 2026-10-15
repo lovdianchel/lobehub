@@ -264,6 +264,23 @@ export const createSandboxStorageClient = ({ baseURL, headers }: SandboxStorageC
       return request(`${CURRENT_STORAGE}/file?${query.toString()}`, { method: 'DELETE' });
     },
 
+    /**
+     * Rename or move a file or folder. Never overwrites: an existing
+     * destination is refused with 409, and the drive's root cannot be renamed.
+     */
+    renameFile: async (
+      params: RequestContext & { newPath: string; path: string },
+    ): Promise<{ path: string }> =>
+      request(`${CURRENT_STORAGE}/rename`, {
+        body: JSON.stringify({
+          newPath: params.newPath,
+          path: params.path,
+          topicId: params.topicId,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+
     getStorage: async (params: RequestContext = {}): Promise<SandboxStorageInfo> => {
       const query = withTopic(new URLSearchParams(), params);
       const suffix = query.size > 0 ? `?${query.toString()}` : '';

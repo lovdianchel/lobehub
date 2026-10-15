@@ -173,6 +173,58 @@ export class EnvironmentInstanceModel {
   };
 
   /**
+   * Every instance directory on one storage, whoever's environment it belongs
+   * to, with whether this member may see it.
+   *
+   * Not filtered by visibility, because the question is about the folders
+   * rather than the rows: a team drive's root holds every member's instance
+   * directories side by side, and the ones this member may not see still have
+   * to be hidden from its listing and kept out of reach of a write. Only the
+   * id and the directory leave — nothing a hidden row says about itself.
+   */
+  listStorageDirectories = async (
+    binding: Pick<EnvironmentInstanceBinding, 'provider' | 'providerResourceId' | 'providerScope'>,
+  ): Promise<{ id: string; visible: boolean; workingDirectory: string }[]> => {
+    const rows = await this.db
+      .select({
+        environmentId: environmentInstances.environmentId,
+        id: environmentInstances.id,
+        workingDirectory: environmentInstances.workingDirectory,
+      })
+      .from(environmentInstances)
+      .where(
+        and(
+          eq(environmentInstances.kind, 'sandbox'),
+          isNull(environmentInstances.deviceId),
+          eq(environmentInstances.provider, binding.provider ?? ''),
+          eq(environmentInstances.providerScope, binding.providerScope ?? ''),
+          eq(environmentInstances.providerResourceId, binding.providerResourceId ?? ''),
+        ),
+      );
+    if (rows.length === 0) return [];
+
+    const visible = new Set(
+      (
+        await this.db
+          .select({ id: environments.id })
+          .from(environments)
+          .where(
+            and(
+              inArray(environments.id, [...new Set(rows.map((row) => row.environmentId))]),
+              environmentVisibility(this.userId, this.workspaceId, this.callerAgentVisibility),
+            ),
+          )
+      ).map((row) => row.id),
+    );
+
+    return rows.map(({ environmentId, id, workingDirectory }) => ({
+      id,
+      visible: visible.has(environmentId),
+      workingDirectory,
+    }));
+  };
+
+  /**
    * One device's instance at a path, by the pair the schema makes unique.
    *
    * Unlike {@link findByWorkingDirectory} this does not filter by what the

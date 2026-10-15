@@ -1,78 +1,24 @@
-import type { EnvironmentKind, EnvironmentSource, EnvironmentVisibility } from '@lobechat/types';
 import { markDefaultInstances } from '@lobechat/utils/environmentInstance';
 
 import { lambdaClient } from '@/libs/trpc/client';
 
 /**
- * Renderer-side data layer for the persistent cloud-sandbox workspace.
+ * Renderer-side data layer for the user's network drive and the environment
+ * directories initialized on it.
  *
- * Every path is relative to the workspace root (`reports/q3.md`); the absolute
+ * Every path is relative to the drive's root (`reports/q3.md`); the absolute
  * mount path stays server-side, so there is nothing here for a caller to point
- * outside the workspace with.
+ * outside the drive with.
  *
- * `topicId` is an optimization, not a scope: the workspace belongs to the user,
- * not the topic, but the volume is only reachable from inside a sandbox
- * session, so naming the topic the user is already talking to reuses that warm
- * session instead of cold-starting a second sandbox to list a directory.
- */
-/**
- * The part of a specification this API accepts today, and deliberately narrower
- * than `EnvironmentConfiguration`.
+ * `topicId` is an optimization, not a scope: the drive belongs to the user (or
+ * the team), not the topic, but some calls are only reachable from inside a
+ * sandbox session, so naming the topic the user is already talking to reuses
+ * that warm session instead of cold-starting a second sandbox.
  *
- * `sources` is git-only because every other transport authenticates with a key,
- * and a specification documented as carrying no credentials cannot present one.
- * `requirements` is absent because nothing schedules on it yet — the server
- * would drop it without a word, and a field the types refuse is better than one
- * that quietly evaporates.
+ * The definitions environments are built from need no drive and live in
+ * `environmentService`.
  */
-export interface SandboxEnvironmentSpecification {
-  bootstrapCommand?: string;
-  env?: Record<string, string>;
-  excludePaths?: string[];
-  internetAccess?: boolean;
-  kind?: EnvironmentKind;
-  maintenanceCommand?: string;
-  sources?: Extract<EnvironmentSource, { kind: 'git' }>[];
-}
-
 class SandboxStorageService {
-  /**
-   * Environment specifications: what an environment should contain. Answered
-   * from the database alone, so this returns immediately.
-   */
-  listEnvironments = async (params?: { visibility?: EnvironmentVisibility }) =>
-    lambdaClient.sandboxStorage.listEnvironments.query(params);
-
-  createEnvironment = async (params: {
-    configuration?: SandboxEnvironmentSpecification;
-    description?: string;
-    name: string;
-    visibility?: EnvironmentVisibility;
-  }) =>
-    // Always with its default instance: this client has no create-instance
-    // dialog to follow with. The server leaves it out for clients that do.
-    lambdaClient.sandboxStorage.createEnvironment.mutate({ ...params, withDefaultInstance: true });
-
-  /**
-   * Edits the specification. Existing instances keep the one they were created
-   * with; the change shapes what the next instance is built from.
-   */
-  updateEnvironment = async (params: {
-    configuration?: SandboxEnvironmentSpecification;
-    description?: string;
-    id: string;
-    name?: string;
-  }) => lambdaClient.sandboxStorage.updateEnvironment.mutate(params);
-
-  /**
-   * Publishes an environment to the workspace, or takes it back.
-   *
-   * Separate from {@link updateEnvironment} because it changes who else can run
-   * in what this environment built, not what the environment is.
-   */
-  setEnvironmentVisibility = async (params: { id: string; visibility: EnvironmentVisibility }) =>
-    lambdaClient.sandboxStorage.setEnvironmentVisibility.mutate(params);
-
   /**
    * Replaces a file's whole contents, creating it and its parents if needed.
    * Text only — the execution plane carries the body as a JSON string.
@@ -83,10 +29,6 @@ class SandboxStorageService {
     path: string;
     topicId?: string;
   }) => lambdaClient.sandboxStorage.writeFile.mutate(params);
-
-  /** Refused while instances still reference it — those go first. */
-  removeEnvironment = async (params: { id: string }) =>
-    lambdaClient.sandboxStorage.removeEnvironment.mutate(params);
 
   /**
    * Instances, each joined with the state the execution plane holds. A
@@ -179,14 +121,17 @@ class SandboxStorageService {
   stopInstance = async (params: { id: string }) =>
     lambdaClient.sandboxStorage.stopInstance.mutate(params);
 
+  /** Rename or move a file or folder; never overwrites an existing one. */
+  renameFile = async (params: { newPath: string; path: string; topicId?: string }) =>
+    lambdaClient.sandboxStorage.renameFile.mutate(params);
+
   /** Create a directory (parents included, idempotent). */
   createDirectory = async (params: { instanceId?: string; path: string; topicId?: string }) =>
     lambdaClient.sandboxStorage.createDirectory.mutate(params);
 
   /**
-   * Whether this account has a persistent workspace at all. Pair it with the
-   * `enablePersistentSandbox` lab flag the client already holds: flag off shows
-   * nothing, flag on without an entitlement shows the upgrade prompt.
+   * Whether this account has a drive at all. Without one, the directory
+   * picker's sandbox side shows the way to a plan instead of folders.
    */
   getEntitlement = async () => lambdaClient.sandboxStorage.getEntitlement.query();
 
@@ -203,17 +148,6 @@ class SandboxStorageService {
   listFiles = async (
     params: { instanceId?: string; path?: string; recursive?: boolean; topicId?: string } = {},
   ) => lambdaClient.sandboxStorage.listFiles.query(params);
-
-  /**
-   * Repositories this account can build an environment from. Answers
-   * `connected: false` rather than failing when GitHub is not linked — for the
-   * picker that is a state to resolve, not an error.
-   */
-  listGithubRepositories = async () => lambdaClient.sandboxStorage.listGithubRepositories.query();
-
-  /** The branches of one repository, or `connected: false` when GitHub is not linked. */
-  listGithubBranches = async (params: { owner: string; repository: string }) =>
-    lambdaClient.sandboxStorage.listGithubBranches.query(params);
 
   readFile = async (params: { instanceId?: string; path: string; topicId?: string }) =>
     lambdaClient.sandboxStorage.readFile.query(params);

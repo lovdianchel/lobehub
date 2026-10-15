@@ -191,6 +191,59 @@ describe('environment visibility', () => {
     await expect(asPublicAgent.findById(instance.id)).resolves.toMatchObject({ id: instance.id });
   });
 
+  // A team drive's root holds every member's instance folders side by side,
+  // so the listing needs all of them — and which ones this member may see.
+  it("lists every instance folder on a storage, marking a colleague's private one hidden", async () => {
+    const binding = {
+      kind: 'sandbox' as const,
+      provider: 'test-provider',
+      providerResourceId: 'workspace',
+      providerScope: 'test-scope',
+    };
+    const privateEnv = await owner.create({ name: 'Private' });
+    const publishedEnv = await owner.create({ name: 'Published', visibility: 'public' });
+    const memberEnv = await member.create({ name: 'Mine' });
+    const hidden = await ownerInstances.create({
+      ...binding,
+      environmentId: privateEnv.id,
+      name: 'secret',
+      workingDirectory: 'secret',
+    });
+    const shared = await ownerInstances.create({
+      ...binding,
+      environmentId: publishedEnv.id,
+      name: 'shared',
+      workingDirectory: 'shared',
+    });
+    const own = await memberInstances.create({
+      ...binding,
+      environmentId: memberEnv.id,
+      name: 'mine',
+      workingDirectory: 'mine',
+    });
+    // Another storage entirely: never part of this drive's answer.
+    await ownerInstances.create({
+      ...binding,
+      environmentId: privateEnv.id,
+      name: 'elsewhere',
+      providerScope: 'other-scope',
+      workingDirectory: 'elsewhere',
+    });
+
+    const directories = await memberInstances.listStorageDirectories(binding);
+
+    expect(
+      directories.sort((a, b) => a.workingDirectory.localeCompare(b.workingDirectory)),
+    ).toEqual([
+      { id: own!.id, visible: true, workingDirectory: 'mine' },
+      { id: hidden!.id, visible: false, workingDirectory: 'secret' },
+      { id: shared!.id, visible: true, workingDirectory: 'shared' },
+    ]);
+    await expect(
+      ownerInstances.listStorageDirectories({ ...binding, providerScope: 'empty-scope' }),
+    ).resolves.toEqual([]);
+  });
+
   // The unique index only catches the identical path. A folder inside another
   // instance's, or around one, would put two captured states on one tree —
   // and a colleague's private instance occupies its folder just the same.

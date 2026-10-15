@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getPendingSandboxSelection } from '@/store/chat/pendingSandboxSelection';
 
-import { useSandboxMode } from './useSandboxMode';
+import { isPersistentSelection, useSandboxPlacement } from './useSandboxPlacement';
 
 interface TopicSandbox {
   sandboxInstanceId?: string;
-  sandboxMode?: 'ephemeral' | 'persistent';
+  sandboxWorkingDirectory?: string;
 }
 
 const state = vi.hoisted(() => ({
@@ -33,48 +33,70 @@ beforeEach(() => {
   // The main column's topic stays globally active while a side pane renders another.
   state.activeTopicId = 'main-topic';
   state.topics = {
-    'main-topic': { sandboxInstanceId: 'main-instance', sandboxMode: 'persistent' },
-    'pane-topic': { sandboxMode: 'ephemeral' },
+    'main-topic': { sandboxInstanceId: 'main-instance' },
+    'pane-topic': { sandboxWorkingDirectory: 'reports' },
   };
   state.updateTopicMetadata.mockReset();
 });
 
-describe('useSandboxMode', () => {
+describe('useSandboxPlacement', () => {
   it('reads and writes the given topic instead of the global active topic', async () => {
-    const { result } = renderHook(() => useSandboxMode('agent-1', 'pane-topic'));
+    const { result } = renderHook(() => useSandboxPlacement('agent-1', 'pane-topic'));
 
-    expect(result.current.selection).toEqual({ instanceId: undefined, mode: 'ephemeral' });
+    expect(result.current.selection).toEqual({
+      instanceId: undefined,
+      workingDirectory: 'reports',
+    });
     expect(result.current.topicId).toBe('pane-topic');
 
-    await act(() =>
-      result.current.setSelection({ instanceId: 'pane-instance', mode: 'persistent' }),
-    );
+    await act(() => result.current.setSelection({ instanceId: 'pane-instance' }));
 
+    // Picking an environment directory clears the folder, so the two never
+    // both stand on one topic.
     expect(state.updateTopicMetadata).toHaveBeenCalledWith('pane-topic', {
       sandboxInstanceId: 'pane-instance',
-      sandboxMode: 'persistent',
+      sandboxWorkingDirectory: undefined,
+    });
+  });
+
+  it('clears both halves when the temporary sandbox is picked', async () => {
+    const { result } = renderHook(() => useSandboxPlacement('agent-1', 'pane-topic'));
+
+    await act(() => result.current.setSelection({}));
+
+    expect(state.updateTopicMetadata).toHaveBeenCalledWith('pane-topic', {
+      sandboxInstanceId: undefined,
+      sandboxWorkingDirectory: undefined,
     });
   });
 
   it('buffers the choice for a conversation without a topic even while another topic is active', async () => {
-    const { result } = renderHook(() => useSandboxMode('agent-new-topic', null));
+    const { result } = renderHook(() => useSandboxPlacement('agent-new-topic', null));
 
     expect(result.current.selection).toEqual({});
     expect(result.current.topicId).toBeUndefined();
 
-    await act(() => result.current.setSelection({ mode: 'persistent' }));
+    await act(() => result.current.setSelection({ workingDirectory: '.' }));
 
     expect(state.updateTopicMetadata).not.toHaveBeenCalled();
-    expect(getPendingSandboxSelection('agent-new-topic')).toEqual({ mode: 'persistent' });
+    expect(getPendingSandboxSelection('agent-new-topic')).toEqual({ workingDirectory: '.' });
   });
 
   it('follows the global active topic when no topic is given', () => {
-    const { result } = renderHook(() => useSandboxMode('agent-1'));
+    const { result } = renderHook(() => useSandboxPlacement('agent-1'));
 
     expect(result.current.selection).toEqual({
       instanceId: 'main-instance',
-      mode: 'persistent',
+      workingDirectory: undefined,
     });
     expect(result.current.topicId).toBe('main-topic');
+  });
+});
+
+describe('isPersistentSelection', () => {
+  it('reads the drive root as a choice, and nothing as the temporary sandbox', () => {
+    expect(isPersistentSelection({ workingDirectory: '.' })).toBe(true);
+    expect(isPersistentSelection({ instanceId: 'i' })).toBe(true);
+    expect(isPersistentSelection({})).toBe(false);
   });
 });

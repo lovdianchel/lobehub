@@ -74,9 +74,12 @@ describe('settings useCategory', () => {
       SettingsTabs.Appearance,
       SettingsTabs.Hotkey,
     ]);
+    // Environments is there with no lab switch: a code environment is a
+    // definition, written down whether or not there is a drive to run it on.
     expect(generalGroup?.items.map((item) => item.key)).toEqual([
       SettingsTabs.Stats,
       SettingsTabs.Devices,
+      SettingsTabs.Environments,
     ]);
     expect(
       result.current.find((group) => group.key === SettingsGroupKey.Agent)?.items.map((i) => i.key),

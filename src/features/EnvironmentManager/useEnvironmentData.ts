@@ -2,11 +2,10 @@ import type { EnvironmentVisibility } from '@lobechat/types';
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSWRConfig } from 'swr';
 
+import { useSandboxDriveEntitlement } from '@/hooks/useSandboxDriveEntitlement';
 import { useClientDataSWR } from '@/libs/swr';
-import {
-  type SandboxEnvironmentSpecification,
-  sandboxStorageService,
-} from '@/services/sandboxStorage';
+import { environmentService, type SandboxEnvironmentSpecification } from '@/services/environment';
+import { sandboxStorageService } from '@/services/sandboxStorage';
 
 import { settleThenRefresh } from './settleThenRefresh';
 
@@ -31,9 +30,9 @@ const BUILD_KEY = 'sandbox-instance-build';
  * for whom.
  */
 export const useEnvironments = (visibility?: EnvironmentVisibility) =>
-  useClientDataSWR<Awaited<ReturnType<typeof sandboxStorageService.listEnvironments>>>(
+  useClientDataSWR<Awaited<ReturnType<typeof environmentService.listEnvironments>>>(
     [ENVIRONMENTS_KEY, visibility ?? 'all'],
-    () => sandboxStorageService.listEnvironments(visibility ? { visibility } : undefined),
+    () => environmentService.listEnvironments(visibility ? { visibility } : undefined),
   );
 
 /**
@@ -49,8 +48,11 @@ export const useEnvironments = (visibility?: EnvironmentVisibility) =>
  * store cannot be reached the rows still list with `snapshotsUnavailable` set.
  */
 export const useInstances = () => {
+  // Initialized folders live on the drive, so without one there is nothing to
+  // list — and asking would only collect a refusal per render.
+  const { entitled } = useSandboxDriveEntitlement();
   const rows = useClientDataSWR<Awaited<ReturnType<typeof sandboxStorageService.listInstances>>>(
-    [INSTANCES_KEY, 'rows'],
+    entitled ? [INSTANCES_KEY, 'rows'] : null,
     () => sandboxStorageService.listInstances({ withSizes: false }),
   );
   const sizes = useClientDataSWR<Awaited<ReturnType<typeof sandboxStorageService.listInstances>>>(
@@ -85,6 +87,8 @@ export const useInstances = () => {
 
   return {
     data,
+    /** `undefined` until the drive entitlement is known. */
+    entitled,
     error: rows.error,
     isLoading: rows.isLoading,
     mutate,
@@ -289,10 +293,8 @@ export type SandboxInstance = NonNullable<
   ReturnType<typeof useInstances>['data']
 >['instances'][number];
 
-/** A new environment as `createEnvironment` returns it: with its default instance. */
-export type CreatedEnvironment = Awaited<
-  ReturnType<typeof sandboxStorageService.createEnvironment>
->;
+/** A new environment as `createEnvironment` returns it: the definition alone. */
+export type CreatedEnvironment = Awaited<ReturnType<typeof environmentService.createEnvironment>>;
 
 export type SandboxEnvironment = NonNullable<
   ReturnType<typeof useEnvironments>['data']
@@ -325,12 +327,11 @@ export const useEnvironmentActions = () => {
       name: string;
       visibility?: EnvironmentVisibility;
     }) => {
-      // Returned, not discarded: it carries the default instance the server
-      // made alongside the environment, and the caller starts its build.
-      const created = await sandboxStorageService.createEnvironment(params);
-      // The rows too: the default instance arrived with the environment, and
-      // the panel that opens next should show it rather than an empty list.
-      await Promise.all([refreshEnvironments(), refreshRows()]);
+      // Returned, not discarded: the caller opens the environment it made.
+      // No folder comes with it — folders are initialized from an environment
+      // in the directory picker, where the drive is.
+      const created = await environmentService.createEnvironment(params);
+      await refreshEnvironments();
 
       return created;
     },
@@ -408,12 +409,12 @@ export const useEnvironmentActions = () => {
     },
 
     setEnvironmentVisibility: async (params: { id: string; visibility: EnvironmentVisibility }) => {
-      await sandboxStorageService.setEnvironmentVisibility(params);
+      await environmentService.setEnvironmentVisibility(params);
       await refreshEnvironments();
     },
 
     removeEnvironment: async (id: string) => {
-      await sandboxStorageService.removeEnvironment({ id });
+      await environmentService.removeEnvironment({ id });
       await refreshEnvironments();
     },
 
@@ -445,7 +446,7 @@ export const useEnvironmentActions = () => {
       id: string;
       name?: string;
     }) => {
-      await sandboxStorageService.updateEnvironment(params);
+      await environmentService.updateEnvironment(params);
       // Existing instances are untouched by a specification edit, so only the
       // environment list has anything new to show.
       await refreshEnvironments();

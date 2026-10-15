@@ -6,26 +6,31 @@ import { cssVar } from 'antd-style';
 import { FolderPlusIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import type { DirectorySource } from './directorySource';
 import { useCreateFolder } from './useCreateFolder';
 
 interface NewFolderInputProps {
-  deviceId: string;
   onCancel: () => void;
   onCreated: (path: string) => void;
   parentPath: string;
+  source: DirectorySource;
 }
 
-/** Inline row that names and creates a folder inside the folder being browsed. */
+/**
+ * Inline row that names and creates a folder inside the folder being browsed,
+ * with whatever else the source asks alongside the name.
+ */
 export const NewFolderInput = ({
-  deviceId,
   onCancel,
   onCreated,
   parentPath,
+  source,
 }: NewFolderInputProps) => {
   const { t } = useTranslation('device');
   const { t: tCommon } = useTranslation('common');
-  const { error, name, pending, setName, submit } = useCreateFolder({
-    deviceId,
+  const { error, name, options, pending, setName, setOptions, submit } = useCreateFolder({
+    create: source.createFolder,
+    errorMessageKey: source.folderErrorKey,
     onCreated,
     parentPath,
   });
@@ -61,6 +66,7 @@ export const NewFolderInput = ({
           {t('workingDirectory.newFolderCreate')}
         </Button>
       </Flexbox>
+      {source.renderNewFolderOptions?.({ onChange: setOptions, value: options })}
       {error && (
         <Text fontSize={12} role={'alert'} type={'danger'}>
           {error}

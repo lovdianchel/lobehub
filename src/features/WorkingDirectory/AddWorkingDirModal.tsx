@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 import { deviceService } from '@/services/device';
 
+import EnvironmentSelect from './EnvironmentSelect';
 import { RemoteDirectoryBrowser } from './RemoteDirectoryBrowser';
 
 interface AddWorkingDirContentProps {
@@ -20,8 +21,13 @@ interface AddWorkingDirContentProps {
    * modal open; return undefined on success (the modal closes). Lets the caller
    * validate (e.g. statPath) and enrich (repoType) in one round-trip.
    */
-  onSubmit: (path: string) => Promise<string | undefined>;
+  onSubmit: (path: string, extra: { environmentId?: string }) => Promise<string | undefined>;
   placeholder?: string;
+  /**
+   * Offer a code environment to go with the folder. On a device that is a
+   * note on the folder, nothing more: nothing is cloned or set up there.
+   */
+  withEnvironment?: boolean;
 }
 
 const AddWorkingDirContent = ({
@@ -29,6 +35,7 @@ const AddWorkingDirContent = ({
   deviceId,
   onSubmit,
   placeholder,
+  withEnvironment,
 }: AddWorkingDirContentProps) => {
   const { t: tPlugin } = useTranslation('device');
   const { t: tCommon } = useTranslation('common');
@@ -37,6 +44,7 @@ const AddWorkingDirContent = ({
   const [value, setValue] = useState(defaultPath ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [environmentId, setEnvironmentId] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,7 +58,7 @@ const AddWorkingDirContent = ({
     setError(undefined);
     setLoading(true);
     try {
-      const message = await onSubmit(next);
+      const message = await onSubmit(next, { environmentId });
       if (message) {
         setError(message);
         return;
@@ -64,12 +72,17 @@ const AddWorkingDirContent = ({
     }
   };
 
+  const environmentSelect = withEnvironment ? (
+    <EnvironmentSelect disabled={loading} value={environmentId} onChange={setEnvironmentId} />
+  ) : undefined;
+
   if (!manual && deviceId) {
     return (
       <RemoteDirectoryBrowser
         defaultPath={value.trim() || undefined}
         deviceId={deviceId}
         error={error}
+        footerExtra={environmentSelect}
         loading={loading}
         onCancel={close}
         onSelect={handleSubmit}
@@ -103,7 +116,8 @@ const AddWorkingDirContent = ({
         />
         {error ? <Text style={{ color: cssVar.colorError, fontSize: 12 }}>{error}</Text> : null}
       </Flexbox>
-      <Flexbox horizontal gap={8} justify={'flex-end'} wrap={'wrap'}>
+      <Flexbox horizontal align={'center'} gap={8} justify={'flex-end'} wrap={'wrap'}>
+        {environmentSelect}
         {deviceId && (
           <Button
             disabled={loading}
@@ -143,6 +157,8 @@ export const openAddWorkingDirModal = (options: AddWorkingDirContentProps): Moda
   });
 
 export interface PickedWorkingDir {
+  /** The code environment picked with the folder — metadata only on a device. */
+  environmentId?: string;
   path: string;
   repoType?: 'git' | 'github';
 }
@@ -157,21 +173,28 @@ export const openPickWorkingDirModal = ({
   defaultPath,
   deviceId,
   onPick,
+  withEnvironment,
 }: {
   defaultPath?: string;
   deviceId?: string;
   onPick: (entry: PickedWorkingDir) => void | Promise<void>;
+  withEnvironment?: boolean;
 }): ModalInstance =>
   openAddWorkingDirModal({
     defaultPath,
     deviceId,
-    onSubmit: async (path) => {
+    onSubmit: async (path, { environmentId }) => {
       const result = deviceId ? await deviceService.statPath(deviceId, path) : undefined;
       if (result) {
         if (!result.exists) return t('workingDirectory.pathNotExist', { ns: 'device' });
         if (!result.isDirectory) return t('workingDirectory.pathNotDirectory', { ns: 'device' });
       }
-      await onPick({ path, repoType: result?.repoType });
+      await onPick({
+        ...(environmentId ? { environmentId } : {}),
+        path,
+        repoType: result?.repoType,
+      });
       return undefined;
     },
+    withEnvironment,
   });

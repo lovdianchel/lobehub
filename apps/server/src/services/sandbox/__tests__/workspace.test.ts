@@ -89,12 +89,12 @@ describe('formatSandboxStoragePromptVariables', () => {
     );
   });
 
-  it('describes a persistent workspace without naming a directory', () => {
-    const vars = formatSandboxStoragePromptVariables({ mode: 'persistent' });
+  it('describes the drive root without naming a directory', () => {
+    const vars = formatSandboxStoragePromptVariables({ mode: 'drive' });
     const rendered = render(vars);
 
     for (const key of placeholders) expect(rendered).not.toContain(key);
-    expect(vars.sandbox_workspace).toContain('persistent workspace');
+    expect(vars.sandbox_workspace).toContain('network drive');
     // Steers heavy work away from the workspace without naming a scratch
     // directory: where installs land is the platform's business, and a path
     // written here would outlive whatever it decides to do with them.
@@ -108,14 +108,14 @@ describe('formatSandboxStoragePromptVariables', () => {
     expect(rendered).not.toContain('Files from previous sessions may not persist');
   });
 
-  it('names the chosen subdirectory and places it under the workspace root', () => {
+  it('names the chosen folder and keeps the run in it', () => {
     const vars = formatSandboxStoragePromptVariables({
       cwd: 'projects/atlas',
-      mode: 'persistent',
+      mode: 'drive',
     });
 
     expect(vars.sandbox_workspace).toContain('`projects/atlas`');
-    expect(vars.sandbox_workspace).toContain('workspace root is above you');
+    expect(vars.sandbox_workspace).toContain('Keep to this folder');
     // The generic "pick your own subdirectory" advice is wrong once one is
     // chosen — the model is already in it.
     expect(vars.sandbox_workspace).not.toContain('its own subdirectory');
@@ -132,8 +132,10 @@ describe('formatSandboxStoragePromptVariables', () => {
   // model that wrote one down would keep using it after the root moved.
   it('never hardcodes a mount path', () => {
     for (const input of [
+      { mode: 'drive' } as const,
+      { cwd: 'a/b', mode: 'drive' } as const,
       { mode: 'persistent' } as const,
-      { cwd: 'a/b', mode: 'persistent' } as const,
+      { cwd: 'a', mode: 'persistent' } as const,
     ]) {
       const vars = formatSandboxStoragePromptVariables(input);
       expect(vars.sandbox_workspace).not.toContain('/mnt/');

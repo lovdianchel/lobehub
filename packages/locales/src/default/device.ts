@@ -135,4 +135,35 @@ export default {
   'workingDirectory.worktreesEmpty': 'No worktrees found',
   'workingDirectory.worktreesHeading': 'Worktrees',
   'workingDirectory.worktreesNoMatch': 'No matching worktrees',
+  'workingDirectory.environment.label': 'Code environment',
+  'workingDirectory.environment.none': 'No environment',
+  'workingDirectory.drive.title': 'Choose a folder on your drive',
+  'workingDirectory.drive.browseDescription':
+    'Browse your drive and pick the folder this conversation works in. Files in it are kept across conversations.',
+  'workingDirectory.drive.browseDescriptionShared':
+    'Browse the team drive and pick a folder. The root holds everyone’s folders, so pick one inside it.',
+  'workingDirectory.drive.rootNotAllowed':
+    'The team drive’s root can’t be used — open or create a folder first.',
+  'workingDirectory.drive.environmentBadge': 'Environment',
+  'workingDirectory.drive.state.building': 'Building',
+  'workingDirectory.drive.state.failed': 'Build failed',
+  'workingDirectory.drive.state.inUse': 'In use',
+  'workingDirectory.drive.inUseDesc': 'Another conversation is using this environment directory',
+  'workingDirectory.drive.privateBlocked': 'Private environment — a shared agent can’t use it',
+  'workingDirectory.drive.createCopy': 'Create copy',
+  'workingDirectory.drive.initializeWith': 'Initialize with',
+  'workingDirectory.drive.initializeHint':
+    'The folder is created at the drive root and set up from this environment: the repository is cloned and its setup runs.',
+  'workingDirectory.drive.rename': 'Rename',
+  'workingDirectory.drive.renameTitle': 'Rename folder',
+  'workingDirectory.drive.renameFailed': 'The folder couldn’t be renamed',
+  'workingDirectory.drive.delete': 'Delete',
+  'workingDirectory.drive.deleteConfirmTitle': 'Delete “{{name}}”?',
+  'workingDirectory.drive.deleteConfirmContent':
+    'Everything in this folder is deleted from the drive, for everyone who can see it. Conversations working in it fall back to a temporary sandbox.',
+  'workingDirectory.drive.actionFailed': 'That didn’t work. Try again.',
+  'workingDirectory.drive.folderNotEmpty':
+    'This folder already has files in it. Only a new or empty folder can be initialized from an environment.',
+  'workingDirectory.drive.folderTaken': 'An environment directory with this name already exists.',
+  'workingDirectory.drive.readOnly': 'Environment directories are read-only here.',
 };

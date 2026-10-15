@@ -1,19 +1,11 @@
 'use client';
 
-import { environmentKind } from '@lobechat/types';
 import { Github } from '@lobehub/icons';
 import { DropdownMenu, Flexbox, Icon, Tooltip } from '@lobehub/ui';
-import { Avatar, Button, confirmModal, Tag, Text, toast } from '@lobehub/ui/base-ui';
+import { Avatar, Button, confirmModal, Text, toast } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
 import dayjs from 'dayjs';
-import {
-  EyeOffIcon,
-  FolderIcon,
-  GlobeIcon,
-  MoreHorizontalIcon,
-  PlusIcon,
-  Trash2Icon,
-} from 'lucide-react';
+import { EyeOffIcon, GlobeIcon, MoreHorizontalIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -107,8 +99,11 @@ const styles = createStaticStyles(({ css }) => ({
 interface EnvironmentItemProps {
   environment: SandboxEnvironment;
   instanceCount: number;
-  /** Select this environment AND open its instance-create form in the panel. */
-  onCreateInstance: () => void;
+  /**
+   * Select this environment AND open its instance-create form in the panel.
+   * Absent without a drive, where there is nowhere to initialize a folder.
+   */
+  onCreateInstance?: () => void;
   onSelect: () => void;
   selected?: boolean;
   /**
@@ -135,7 +130,6 @@ const EnvironmentItem = memo<EnvironmentItemProps>(
     const canEdit = useCanEditEnvironment()(environment);
 
     const repository = repositoryPath(environment.configuration);
-    const kind = environmentKind(environment);
     const creator =
       environment.creator?.fullName ||
       environment.creator?.username ||
@@ -214,7 +208,7 @@ const EnvironmentItem = memo<EnvironmentItemProps>(
         }}
       >
         <div className={styles.iconTile}>
-          {kind === 'files' ? <Icon icon={FolderIcon} size={20} /> : <Github size={20} />}
+          <Github size={20} />
         </div>
 
         <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
@@ -230,12 +224,6 @@ const EnvironmentItem = memo<EnvironmentItemProps>(
             <Text ellipsis fontSize={15} style={{ flex: '0 1 auto', minWidth: 0 }} weight={500}>
               {environment.name}
             </Text>
-            {/* The one word that says which of the two things this is: a
-                folder of files or a repository with setup. Beside the name
-                because it is how the list is told apart at a glance. */}
-            <Tag size={'small'} style={{ alignSelf: 'center', flex: 'none' }}>
-              {t(`environments.kind.${kind}`)}
-            </Tag>
             {environment.description && (
               /* Shrinks a thousand times more readily than the name, the same
                  way the repository yields to the facts on the line below. */
@@ -308,12 +296,16 @@ const EnvironmentItem = memo<EnvironmentItemProps>(
               <DropdownMenu
                 placement={'bottomRight'}
                 items={[
-                  {
-                    icon: <Icon icon={PlusIcon} />,
-                    key: 'create-instance',
-                    label: t('environments.instances.create'),
-                    onClick: onCreateInstance,
-                  },
+                  ...(onCreateInstance
+                    ? [
+                        {
+                          icon: <Icon icon={PlusIcon} />,
+                          key: 'create-instance',
+                          label: t('environments.instances.create'),
+                          onClick: onCreateInstance,
+                        },
+                      ]
+                    : []),
                   ...visibilityItems,
                   {
                     danger: true,

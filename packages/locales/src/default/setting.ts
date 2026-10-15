@@ -4386,4 +4386,10 @@ When I am ___, I need ___
   'environments.files.openHint': 'Double-click a folder to open it, or a file to view it',
   'environments.files.unusedInstance':
     'Nothing here yet. The code appears once the copy is built or a conversation runs in it.',
+  'environments.files.folderNotEmpty':
+    'This folder already has files in it. Only a new or empty folder can be initialized from an environment.',
+  'environments.files.folderTaken': 'An environment directory with this name already exists.',
+  'environments.files.readOnly':
+    'Environment directories are read-only: only their own sessions write to them.',
+  'environments.files.notFound': 'That folder doesn’t exist.',
 };

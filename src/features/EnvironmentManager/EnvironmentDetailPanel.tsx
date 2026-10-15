@@ -1,13 +1,11 @@
 'use client';
 
-import { environmentKind } from '@lobechat/types';
 import { Github } from '@lobehub/icons';
 import { Flexbox, Icon, Tooltip } from '@lobehub/ui';
 import { ActionIcon, Avatar, Tabs, Tag, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import dayjs from 'dayjs';
 import {
-  FolderIcon,
   HistoryIcon,
   KeyRoundIcon,
   LayersIcon,
@@ -18,6 +16,8 @@ import {
 } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { SandboxStorageUpgradeGuide } from '@/business/client/features/SandboxStorageUpsell';
 
 import { type CopyTab, copyTabs, resolveDetailTab } from './detailTabs';
 import EnvironmentForm, { type EnvironmentFormSection } from './EnvironmentForm';
@@ -85,16 +85,12 @@ interface EnvironmentDetailPanelProps {
 const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment, onClose }) => {
   const { t } = useTranslation('setting');
   const actions = useEnvironmentActions();
-  const { data } = useInstances();
+  const { data, entitled } = useInstances();
   const canEdit = useCanEditEnvironment()(environment);
   // Local to the panel and reset with it (the panel is keyed on the
   // environment), so opening another environment lands on its first tab.
   const [picked, setTab] = useState<DetailTab>();
 
-  // A files environment is a folder: there is no repository, setup or runtime
-  // to configure, so the panel keeps its name, description and files and
-  // drops the tabs and fields that would only ever be empty.
-  const kind = environmentKind(environment);
   const creator =
     environment.creator?.fullName ||
     environment.creator?.username ||
@@ -109,7 +105,7 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
     <Flexbox className={styles.container} gap={20}>
       <Flexbox horizontal align={'center'} className={styles.header} gap={12}>
         <span className={styles.iconTile}>
-          {kind === 'files' ? <Icon icon={FolderIcon} size={18} /> : <Github size={18} />}
+          <Github size={18} />
         </span>
         <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
           <Text ellipsis weight={600}>
@@ -122,7 +118,6 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
                 the list is scanned for "is this recent", the panel is read
                 for "when". */}
           <Flexbox horizontal align={'center'} gap={8} wrap={'wrap'}>
-            <Tag size={'small'}>{t(`environments.kind.${kind}`)}</Tag>
             <Tag size={'small'}>
               {instanceCount === 0
                 ? t('environments.instances.empty')
@@ -200,15 +195,11 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
               ]),
           ...(canEdit
             ? [
-                ...(kind === 'code'
-                  ? [
-                      {
-                        icon: <Icon icon={KeyRoundIcon} size={16} />,
-                        key: 'variables',
-                        label: t('environments.form.env'),
-                      },
-                    ]
-                  : []),
+                {
+                  icon: <Icon icon={KeyRoundIcon} size={16} />,
+                  key: 'variables',
+                  label: t('environments.form.env'),
+                },
                 {
                   icon: <Icon icon={SettingsIcon} size={16} />,
                   key: 'settings',
@@ -224,12 +215,18 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
             sections and meets the next one's icon exactly, so any space
             between them would show as a break in the line. */}
       <Flexbox>
-        {/* The one copy, as the environment itself: its build state (a code
-            environment's only — a files one has nothing to build), its files
-            and what ran in it, without a list of one to click through. */}
-        {tab === 'overview' && (
+        {/* Folders initialized from this environment live on the drive, so
+            without one the copy tabs say how to get one instead — the
+            definition itself stays editable either way. */}
+        {entitled === false && (tab === 'overview' || tab === 'instances') && (
+          <SandboxStorageUpgradeGuide />
+        )}
+
+        {/* The one copy, as the environment itself: its build state, its
+            files and what ran in it, without a list of one to click through. */}
+        {entitled && tab === 'overview' && (
           <TabPane>
-            <InstanceSection single editable={canEdit} environmentId={environment.id} kind={kind} />
+            <InstanceSection single editable={canEdit} environmentId={environment.id} />
             <Flexbox gap={8}>
               <Text weight={500}>{t('environments.sessions.title')}</Text>
               <Text fontSize={12} type={'secondary'}>
@@ -240,13 +237,13 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
           </TabPane>
         )}
 
-        {tab === 'instances' && (
+        {entitled && tab === 'instances' && (
           <TabPane desc={t('environments.instances.desc')}>
-            <InstanceSection editable={canEdit} environmentId={environment.id} kind={kind} />
+            <InstanceSection editable={canEdit} environmentId={environment.id} />
           </TabPane>
         )}
 
-        {tab === 'sessions' && (
+        {entitled && tab === 'sessions' && (
           <TabPane desc={t('environments.sessions.desc')}>
             <SessionHistorySection environmentId={environment.id} />
           </TabPane>
@@ -257,7 +254,6 @@ const EnvironmentDetailPanel = memo<EnvironmentDetailPanelProps>(({ environment,
         {canEdit && (tab === 'variables' || tab === 'settings') && (
           <EnvironmentForm
             environment={environment}
-            kind={kind}
             section={tab}
             onSave={(changes) => actions.updateEnvironment({ ...changes, id: environment.id })}
           />

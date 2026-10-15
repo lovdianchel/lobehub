@@ -2,7 +2,9 @@ import type { LobeChatDatabase } from '@lobechat/database';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  driveFolderExists: vi.fn(),
   EnvironmentInstanceModel: vi.fn(),
+  listStorageDirectories: vi.fn(),
   TopicModel: vi.fn(),
   findById: vi.fn(),
   getAgentVisibility: vi.fn(),
@@ -28,6 +30,10 @@ vi.mock('@/database/models/agent', () => ({
 
 vi.mock('@/database/models/environmentInstance', () => ({
   EnvironmentInstanceModel: mocks.EnvironmentInstanceModel,
+}));
+
+vi.mock('../driveFolder', () => ({
+  driveFolderExists: mocks.driveFolderExists,
 }));
 
 const { resolveSandboxSessionConfig } = await import('../session');
@@ -57,11 +63,15 @@ describe('resolveSandboxSessionConfig', () => {
       return { findById };
     });
     mocks.EnvironmentInstanceModel.mockImplementation(function () {
-      return { findById: findInstanceById };
+      return { findById: findInstanceById, listStorageDirectories: mocks.listStorageDirectories };
     });
+    mocks.driveFolderExists.mockReset();
+    mocks.driveFolderExists.mockResolvedValue(true);
+    mocks.listStorageDirectories.mockReset();
+    mocks.listStorageDirectories.mockResolvedValue([]);
     resolveSandboxStorageClaim.mockResolvedValue(CLAIM);
     findById.mockResolvedValue({
-      metadata: { sandboxInstanceId: INSTANCE_ID, sandboxMode: 'persistent' },
+      metadata: { sandboxInstanceId: INSTANCE_ID },
     });
     findInstanceById.mockResolvedValue({
       id: INSTANCE_ID,
@@ -225,41 +235,133 @@ describe('resolveSandboxSessionConfig', () => {
     expect(findById).not.toHaveBeenCalled();
   });
 
-  // The claim is independent of the mode: the workspace exists whether or not
-  // THIS topic writes to it, and the file browser reads it from an ephemeral
-  // topic just as well.
-  it('keeps the claim on an ephemeral topic but drops the instance', async () => {
-    for (const metadata of [{}, { sandboxInstanceId: INSTANCE_ID, sandboxMode: 'ephemeral' }]) {
+  // The claim is independent of the placement: the drive exists whether or not
+  // THIS topic writes to it, and the file browser reads it from a temporary
+  // topic just as well. A mode left on an old topic chooses nothing any more.
+  it('keeps the claim on a topic that picked nothing', async () => {
+    for (const metadata of [{}, { sandboxMode: 'persistent' }]) {
       findById.mockResolvedValue({ metadata });
       await expect(resolve()).resolves.toEqual({ claim: CLAIM, mode: 'ephemeral' });
     }
+    expect(findInstanceById).not.toHaveBeenCalled();
   });
 
-  // A persistent topic that never chose one runs at the workspace root under
-  // the default environment, which is a working session — just not a named one.
-  it('runs at the workspace root when no instance is chosen', async () => {
-    findById.mockResolvedValue({ metadata: { sandboxMode: 'persistent' } });
+  describe('a folder on the drive', () => {
+    it('runs as a drive in the folder it picked', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: 'reports/q3' } });
 
-    await expect(resolve()).resolves.toEqual({ claim: CLAIM, mode: 'persistent' });
-    expect(findInstanceById).not.toHaveBeenCalled();
+      await expect(resolve()).resolves.toEqual({
+        claim: CLAIM,
+        cwd: 'reports/q3',
+        mode: 'drive',
+      });
+      expect(mocks.driveFolderExists).toHaveBeenCalledWith(
+        expect.objectContaining({ claim: CLAIM, path: 'reports/q3' }),
+      );
+    });
+
+    it('runs at the root of a personal drive, which needs no check', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: '.' } });
+
+      await expect(resolve()).resolves.toEqual({ claim: CLAIM, mode: 'drive' });
+      expect(mocks.driveFolderExists).not.toHaveBeenCalled();
+    });
+
+    // Every member's folders live under a shared drive's root, and a session
+    // there is narrowed to the folder it picked — the root narrows nothing.
+    it("refuses a shared drive's root and says why", async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: '.' } });
+
+      await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
+        claim: CLAIM,
+        fallback: 'rootNotAllowed',
+        mode: 'ephemeral',
+      });
+    });
+
+    // Deleted since it was picked: recreating it would bring back an empty
+    // folder under a name someone chose to remove.
+    it('falls back to a temporary sandbox when the folder is gone', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: 'projA' } });
+      mocks.driveFolderExists.mockResolvedValue(false);
+
+      await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
+        claim: CLAIM,
+        fallback: 'directoryMissing',
+        mode: 'ephemeral',
+      });
+    });
+
+    // A drive that could not be asked is not a folder that is gone.
+    it('keeps the folder when the drive cannot answer', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: 'projA' } });
+      mocks.driveFolderExists.mockResolvedValue(undefined);
+
+      await expect(resolve()).resolves.toMatchObject({ cwd: 'projA', mode: 'drive' });
+    });
+
+    it('refuses a folder inside an environment directory', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: 'atlas/src' } });
+      mocks.listStorageDirectories.mockResolvedValue([
+        { id: INSTANCE_ID, visible: false, workingDirectory: 'atlas' },
+      ]);
+
+      await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
+        claim: CLAIM,
+        fallback: 'instanceUnavailable',
+        mode: 'ephemeral',
+      });
+      expect(mocks.listStorageDirectories).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'market', providerScope: CLAIM.key }),
+      );
+    });
+
+    it('refuses a path that would not survive the fence', async () => {
+      findById.mockResolvedValue({ metadata: { sandboxWorkingDirectory: '../other-user' } });
+
+      await expect(resolve()).resolves.toEqual({
+        claim: CLAIM,
+        fallback: 'directoryMissing',
+        mode: 'ephemeral',
+      });
+    });
+
+    it('prefers the instance when a topic somehow carries both', async () => {
+      findById.mockResolvedValue({
+        metadata: { sandboxInstanceId: INSTANCE_ID, sandboxWorkingDirectory: 'projA' },
+      });
+
+      await expect(resolve()).resolves.toMatchObject({
+        environment: INSTANCE_ID,
+        mode: 'persistent',
+      });
+    });
   });
 
   // Deleted, or never this member's — the model answers the same for both.
   // Failing the call instead would leave the topic unable to run at all until
-  // someone edited a database row.
-  it('falls back to the default when the stored instance no longer resolves', async () => {
+  // someone edited a database row; the run is temporary and says why.
+  it('falls back to a temporary sandbox when the stored instance no longer resolves', async () => {
     findInstanceById.mockResolvedValue(undefined);
 
-    await expect(resolve()).resolves.toEqual({ claim: CLAIM, mode: 'persistent' });
+    await expect(resolve()).resolves.toEqual({
+      claim: CLAIM,
+      fallback: 'instanceUnavailable',
+      mode: 'ephemeral',
+    });
   });
 
   // The whole instance goes, not just the directory. Running its packages at
-  // the workspace root would put one instance's files under another's
-  // captured state — silently, which is the failure worth preventing.
+  // the drive root would put one instance's files under another's captured
+  // state — silently, which is the failure worth preventing.
   it('drops the whole instance when its directory would not survive the fence', async () => {
     findInstanceById.mockResolvedValue({ id: INSTANCE_ID, workingDirectory: '../other-user' });
 
-    await expect(resolve()).resolves.toEqual({ claim: CLAIM, mode: 'persistent' });
+    await expect(resolve()).resolves.toEqual({
+      claim: CLAIM,
+      fallback: 'instanceUnavailable',
+      mode: 'ephemeral',
+    });
   });
 
   // A workspace-public agent runs on its caller's session; a private
@@ -271,13 +373,14 @@ describe('resolveSandboxSessionConfig', () => {
   it('looks the instance up as a public agent inside a workspace', async () => {
     findById.mockResolvedValue({
       agentId: 'agent-shared',
-      metadata: { sandboxInstanceId: INSTANCE_ID, sandboxMode: 'persistent' },
+      metadata: { sandboxInstanceId: INSTANCE_ID },
     });
     getAgentVisibility.mockResolvedValue('public');
     findInstanceById.mockResolvedValue(undefined);
 
     await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
       claim: CLAIM,
+      fallback: 'instanceUnavailable',
       mode: 'ephemeral',
     });
     // The topic is read in the workspace's scope; in the personal scope a
@@ -292,36 +395,12 @@ describe('resolveSandboxSessionConfig', () => {
     );
   });
 
-  // A workspace root is shared by every member and holds every instance's
-  // directory, so no run lands there by falling back — deleted instance,
-  // unusable directory or none chosen alike. A personal root is the owner's
-  // own, which is why the tests above still expect it there.
-  it('never falls back to the shared root inside a workspace', async () => {
-    findInstanceById.mockResolvedValue(undefined);
-    await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
-      claim: CLAIM,
-      mode: 'ephemeral',
-    });
-
-    findInstanceById.mockResolvedValue({ id: INSTANCE_ID, workingDirectory: '../other-user' });
-    await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
-      claim: CLAIM,
-      mode: 'ephemeral',
-    });
-
-    findById.mockResolvedValue({ metadata: { sandboxMode: 'persistent' } });
-    await expect(resolve({ workspaceId: 'ws-1' })).resolves.toEqual({
-      claim: CLAIM,
-      mode: 'ephemeral',
-    });
-  });
-
   // Personal agents default to 'public' without meaning it, and every
   // personal environment is the owner's own — so no agent read, no narrowing.
   it('does not narrow by agent visibility in personal mode', async () => {
     findById.mockResolvedValue({
       agentId: 'agent-personal',
-      metadata: { sandboxInstanceId: INSTANCE_ID, sandboxMode: 'persistent' },
+      metadata: { sandboxInstanceId: INSTANCE_ID },
     });
 
     await expect(resolve()).resolves.toMatchObject({ environment: INSTANCE_ID });

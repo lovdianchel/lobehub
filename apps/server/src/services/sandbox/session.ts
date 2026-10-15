@@ -2,6 +2,7 @@ import {
   DEFAULT_SANDBOX_MODE,
   isSafeSandboxCwd,
   isSafeSandboxEnvironmentId,
+  SANDBOX_DRIVE_ROOT,
   SANDBOX_LOCAL_WORK_ROOT,
   type SandboxMode,
   type SandboxStorageClaim,
@@ -14,10 +15,15 @@ import { AgentModel } from '@/database/models/agent';
 import { EnvironmentInstanceModel } from '@/database/models/environmentInstance';
 import { TopicModel } from '@/database/models/topic';
 
+import { isPathWithin, sandboxStorageBinding } from './binding';
+import { driveFolderExists } from './driveFolder';
 import { resolveSandboxStorageClaim } from './entitlement';
 import type { SandboxSessionSpecification } from './types';
 
 const log = debug('lobe-server:sandbox:session');
+
+export type SandboxPlacementFallback =
+  'directoryMissing' | 'instanceUnavailable' | 'rootNotAllowed';
 
 export interface SandboxSessionConfig {
   /**
@@ -28,8 +34,9 @@ export interface SandboxSessionConfig {
    */
   claim: SandboxStorageClaim | null;
   /**
-   * Chosen subdirectory of the workspace, relative to its root. Only ever set
-   * on a run that is actually persistent.
+   * The folder the run works in, relative to the drive's root: the chosen
+   * folder of a `drive` run, or an instance's directory. Absent on a drive run
+   * at the root, and on every ephemeral one.
    */
   cwd?: string;
   /**
@@ -43,6 +50,19 @@ export interface SandboxSessionConfig {
    * to agree or the snapshot at the end is refused.
    */
   environment?: string;
+  /**
+   * Why a placement the topic chose was not honoured, when the run fell back
+   * to a temporary sandbox because of it. Set only on that fallback, so the
+   * composer can say what happened instead of quietly running somewhere the
+   * person did not pick:
+   *
+   * - `directoryMissing` — the folder is no longer on the drive;
+   * - `instanceUnavailable` — the environment directory was deleted, is not
+   *   this member's to use, or the folder sits inside one;
+   * - `rootNotAllowed` — a shared drive's root, which every member's folders
+   *   live under, is not a folder anyone may work in.
+   */
+  fallback?: SandboxPlacementFallback;
   mode: SandboxMode;
   /**
    * What the instance was built from, for the execution plane to act on while
@@ -132,13 +152,20 @@ interface SandboxSessionConfigInput {
 /**
  * Everything the sandbox layer needs to know about persistence for one run,
  * resolved once: the entitlement that goes on the trust token, and the topic's
- * own preferences that go on each request.
+ * own placement that goes on each request. One of three:
+ *
+ * - **instance** (`persistent`) — the topic is bound to an environment
+ *   directory: its folder plus the packages its build installed;
+ * - **drive** — the topic picked a folder on the drive (or its root, in a
+ *   personal account): the folder persists, nothing else does;
+ * - **temporary** (`ephemeral`) — nothing picked, or a pick that can no
+ *   longer be honoured, which then says why in `fallback`.
  *
  * The topic is only consulted when an entitlement exists. Without one the
  * execution plane routes to the ephemeral sandbox whatever the request says, so
- * reading the preferences would buy nothing but a query — and deliberately
- * leaving the chosen instance untouched on the topic is what lets a lapsed
- * subscription pick up exactly where it left off.
+ * reading the placement would buy nothing but a query — and deliberately
+ * leaving it untouched on the topic is what lets a lapsed subscription pick up
+ * exactly where it left off.
  *
  * Never throws; a failed lookup degrades to the ephemeral sandbox every session
  * uses today.
@@ -172,99 +199,121 @@ export const resolveSandboxSessionConfig = async ({
     return { claim, mode: DEFAULT_SANDBOX_MODE };
   }
 
+  const fallBack = (fallback: SandboxPlacementFallback): SandboxSessionConfig => ({
+    claim,
+    fallback,
+    mode: DEFAULT_SANDBOX_MODE,
+  });
+
   try {
     // Scoped to the workspace the run is in: without it the model reads the
     // personal scope (`workspace_id IS NULL`), a workspace topic never
-    // resolves, and every workspace run silently loses its instance.
+    // resolves, and every workspace run silently loses its placement.
     const topic = await new TopicModel(serverDB, userId, workspaceId ?? undefined).findById(
       topicId,
     );
-    if (topic?.metadata?.sandboxMode !== 'persistent') {
-      log(
-        'Ephemeral for topic %s: found=%s mode=%o instance=%o (scope user=%s workspace=%s)',
-        topicId,
-        !!topic,
-        topic?.metadata?.sandboxMode,
-        topic?.metadata?.sandboxInstanceId,
-        userId,
-        workspaceId,
-      );
+    const instanceId = topic?.metadata?.sandboxInstanceId;
+    const folder = topic?.metadata?.sandboxWorkingDirectory;
 
+    if (instanceId) {
+      // A workspace-public agent runs on its caller's session, and a private
+      // environment's captured state can hold that caller's credentials — so
+      // a shared agent reads published environments only. Personal mode has
+      // no such boundary: its agents default to 'public' without meaning it.
+      const callerAgentVisibility =
+        workspaceId && topic.agentId
+          ? await new AgentModel(serverDB, userId, workspaceId).getAgentVisibility(topic.agentId)
+          : null;
+
+      // Deleted, never this member's, or private under a public agent. Any
+      // way, the conversation still runs — in a temporary sandbox, and the
+      // composer names why — rather than not at all until someone edits a
+      // database row.
+      const instance = await new EnvironmentInstanceModel(
+        serverDB,
+        userId,
+        workspaceId ?? undefined,
+        callerAgentVisibility,
+      ).findById(instanceId);
+      if (!instance) {
+        log(
+          'Ignoring unresolvable sandboxInstanceId on topic %s: %o (agentId=%o visibility=%o scope user=%s workspace=%s)',
+          topicId,
+          instanceId,
+          topic.agentId,
+          callerAgentVisibility,
+          userId,
+          workspaceId,
+        );
+
+        return fallBack('instanceUnavailable');
+      }
+
+      // The directory and the snapshot are one choice, so a bad half discards
+      // the whole instance rather than half of it. Running the instance's
+      // packages at the drive root would put one instance's files under
+      // another's captured state, which is the exact mixing separate instances
+      // exist to prevent — and it would do it silently.
+      const { id, workingDirectory } = instance;
+      if (!isSafeSandboxCwd(workingDirectory) || !isSafeSandboxEnvironmentId(id)) {
+        log('Ignoring unusable instance %s on topic %s: %o', id, topicId, workingDirectory);
+        return fallBack('instanceUnavailable');
+      }
+
+      log('Persistent for topic %s: instance=%s cwd=%o', topicId, id, workingDirectory);
+
+      const specification = toSessionSpecification(instance.configurationSnapshot);
+
+      return {
+        claim,
+        cwd: workingDirectory,
+        environment: id,
+        mode: 'persistent',
+        ...(specification && { specification }),
+        ...(hasLocalCheckout(instance) && { workingDir: SANDBOX_LOCAL_WORK_ROOT }),
+      };
+    }
+
+    if (folder === undefined) {
+      log('Ephemeral for topic %s: no folder picked', topicId);
       return { claim, mode: DEFAULT_SANDBOX_MODE };
     }
 
-    // Where a persistent run goes when it has no usable instance. In a
-    // personal account that is the account's own root. In a workspace the root
-    // is shared by every member and holds every instance's directory — private
-    // ones included — so a run with nothing it may use there gets a temporary
-    // directory instead, and the composer says so.
-    const fallback: SandboxSessionConfig = workspaceId
-      ? { claim, mode: DEFAULT_SANDBOX_MODE }
-      : { claim, mode: 'persistent' };
+    if (folder === SANDBOX_DRIVE_ROOT) {
+      // A personal drive is its owner's alone, so its root is a folder like
+      // any other. A shared one holds every member's folders, and a session
+      // there is narrowed to the one it picked — the root narrows nothing.
+      if (workspaceId) return fallBack('rootNotAllowed');
 
-    const instanceId = topic.metadata.sandboxInstanceId;
-    if (!instanceId) {
-      log('Falling back for topic %s: persistent with no instance bound', topicId);
-
-      return fallback;
+      log('Drive for topic %s at the root of %s', topicId, claim.key);
+      return { claim, mode: 'drive' };
     }
 
-    // A workspace-public agent runs on its caller's session, and a private
-    // environment's captured state can hold that caller's credentials — so a
-    // shared agent reads published environments only. Personal mode has no
-    // such boundary: its agents default to 'public' without meaning it.
-    const callerAgentVisibility =
-      workspaceId && topic.agentId
-        ? await new AgentModel(serverDB, userId, workspaceId).getAgentVisibility(topic.agentId)
-        : null;
+    if (!isSafeSandboxCwd(folder)) return fallBack('directoryMissing');
 
-    // Deleted, never this member's, or private under a public agent. Any way,
-    // the conversation still runs, in the fallback above — the alternative is
-    // a topic that cannot run at all until someone edits a database row. The
-    // composer names the private case.
-    const instance = await new EnvironmentInstanceModel(
+    // An environment directory is written by its own sessions alone, and a
+    // colleague's private one is not this member's to read: a folder inside
+    // either is not a drive folder, whatever the path says.
+    const instanceDirectories = await new EnvironmentInstanceModel(
       serverDB,
       userId,
       workspaceId ?? undefined,
-      callerAgentVisibility,
-    ).findById(instanceId);
-    if (!instance) {
-      log(
-        'Ignoring unresolvable sandboxInstanceId on topic %s: %o (agentId=%o visibility=%o scope user=%s workspace=%s)',
-        topicId,
-        instanceId,
-        topic.agentId,
-        callerAgentVisibility,
-        userId,
-        workspaceId,
-      );
-
-      return fallback;
+    ).listStorageDirectories(sandboxStorageBinding(claim.key));
+    if (instanceDirectories.some((entry) => isPathWithin(folder, entry.workingDirectory))) {
+      log('Ignoring a folder inside an instance directory on topic %s: %o', topicId, folder);
+      return fallBack('instanceUnavailable');
     }
 
-    // The directory and the snapshot are one choice, so a bad half discards the
-    // whole instance rather than half of it. Running the instance's packages at
-    // the workspace root would put one instance's files under another's
-    // captured state, which is the exact mixing separate instances exist to
-    // prevent — and it would do it silently.
-    const { id, workingDirectory } = instance;
-    if (!isSafeSandboxCwd(workingDirectory) || !isSafeSandboxEnvironmentId(id)) {
-      log('Ignoring unusable instance %s on topic %s: %o', id, topicId, workingDirectory);
-      return fallback;
+    // Deleted since it was picked — by this member in another tab, or by a
+    // colleague on a shared drive. Recreating it silently would bring back an
+    // empty folder under a name someone chose to remove.
+    if ((await driveFolderExists({ claim, path: folder, userId, workspaceId })) === false) {
+      log('Folder %o on topic %s is no longer on the drive', folder, topicId);
+      return fallBack('directoryMissing');
     }
 
-    log('Persistent for topic %s: instance=%s cwd=%o', topicId, id, workingDirectory);
-
-    const specification = toSessionSpecification(instance.configurationSnapshot);
-
-    return {
-      claim,
-      cwd: workingDirectory,
-      environment: id,
-      mode: 'persistent',
-      ...(specification && { specification }),
-      ...(hasLocalCheckout(instance) && { workingDir: SANDBOX_LOCAL_WORK_ROOT }),
-    };
+    log('Drive for topic %s: cwd=%o', topicId, folder);
+    return { claim, cwd: folder, mode: 'drive' };
   } catch (error) {
     log('Failed to read sandbox preferences for topic %s: %O', topicId, error);
     return { claim, mode: DEFAULT_SANDBOX_MODE };

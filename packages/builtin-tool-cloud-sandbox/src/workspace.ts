@@ -11,9 +11,9 @@
  *    `sandboxStorage` claim (`{ key, quotaBytes }` or none) on the trusted
  *    client token. LobeHub is the sole authority for the key; nothing derives
  *    it from a request body.
- * 2. **Mode** — the run asks for `'persistent'` or `'ephemeral'`. Default is
- *    ephemeral: persistence is an explicit choice per topic, not every task
- *    wants to leave files behind.
+ * 2. **Mode** — the run asks for `'drive'`, `'persistent'` or `'ephemeral'`.
+ *    Default is ephemeral: persistence is an explicit choice per topic, made by
+ *    picking a folder, not every task wants to leave files behind.
  *
  * Only the AND of the two routes to the persistent runtime. Everything after
  * that point — which volume, which mount root, how paths resolve against the
@@ -24,13 +24,31 @@
  */
 
 /**
- * Whether a run wants its working directory to survive the session.
+ * Whether a run wants its working directory to survive the session, and how.
+ *
+ * - `ephemeral` — a throwaway box; nothing survives.
+ * - `drive` — a folder on the persistent volume, used as a network drive: the
+ *   session works in it and restores or captures nothing else, so any number
+ *   of conversations can share one drive at once.
+ * - `persistent` — an environment directory (an instance): the folder plus the
+ *   packages its build installed, restored and captured with the session.
  *
  * Positive form on purpose, and ephemeral by default: the safe state is the one
  * you get by saying nothing. A negative flag (`disablePersistent…`) inverts
  * that — a caller that forgets it opts into persistence by accident.
  */
-export type SandboxMode = 'ephemeral' | 'persistent';
+export type SandboxMode = 'drive' | 'ephemeral' | 'persistent';
+
+/** Whether a mode keeps its working directory on the persistent volume. */
+export const isPersistentSandboxMode = (mode: SandboxMode | undefined): boolean =>
+  mode === 'drive' || mode === 'persistent';
+
+/**
+ * How a topic names the drive's root as its folder. A choice of its own rather
+ * than "no folder", which means the temporary sandbox. Never sent to the
+ * execution plane: a drive call without a folder already works at the root.
+ */
+export const SANDBOX_DRIVE_ROOT = '.';
 
 export const DEFAULT_SANDBOX_MODE: SandboxMode = 'ephemeral';
 
@@ -198,7 +216,10 @@ export interface SandboxStoragePromptVariables {
 }
 
 export interface SandboxStoragePromptInput {
-  /** Chosen subdirectory of the workspace, relative to its root. */
+  /**
+   * The folder the run works in, relative to the drive's root; absent on a
+   * drive run at the root itself.
+   */
   cwd?: string;
   mode?: SandboxMode;
   /**
@@ -217,7 +238,7 @@ export const formatSandboxStoragePromptVariables = ({
   mode = DEFAULT_SANDBOX_MODE,
   workingDir,
 }: SandboxStoragePromptInput = {}): SandboxStoragePromptVariables => {
-  if (mode !== 'persistent') {
+  if (!isPersistentSandboxMode(mode)) {
     return {
       sandbox_session_files: '- Files from previous sessions may not persist',
       sandbox_workspace: [
@@ -229,31 +250,40 @@ export const formatSandboxStoragePromptVariables = ({
     };
   }
 
-  // With a chosen subdirectory the model is told where it sits relative to the
-  // workspace, not where either lives absolutely — the mount root stays the
-  // execution plane's business. It is told the root is reachable because it is:
-  // the fence keeps the session inside the workspace, not inside the chosen
-  // subdirectory, and a model that discovers this by accident is likelier to
-  // wander into another topic's files than one that knows the shape.
-  // A built instance runs in its checkout on local disk, which the session
-  // saves into the instance's directory on the volume — so persistence is real
-  // here too, but through a copy rather than by being the volume. Saying so is
-  // what keeps a model from "fixing" the discrepancy it can see between `pwd`
-  // and the workspace path it can also see.
-  const placement = workingDir
-    ? [
-        `- You start in \`${workingDir}\`, this environment's checkout on the machine's own disk. The session saves it continuously into ${cwd ? `\`${cwd}\`, ` : ''}your instance's directory in a **persistent workspace**, so what you leave here is what you find in your next session, and it is what the user sees in their file browser.`,
-        `- The workspace is also mounted, and you may read from it, but that mounted path is the saved copy — not where this session works. Do not move the task there.`,
-      ]
-    : cwd
+  // Where the run is, in the words the user picked it by: a folder on their
+  // drive, or an environment directory. The mount root stays the execution
+  // plane's business, so neither names an absolute path on the volume.
+  //
+  // A drive keeps files and nothing else — the machine itself starts fresh
+  // every session — so the model is told that installs do not carry over,
+  // rather than discovering it when the next session's import fails.
+  //
+  // A built environment directory runs in its checkout on local disk, which
+  // the session saves into the directory on the volume — so persistence is
+  // real there too, but through a copy rather than by being the volume. Saying
+  // so is what keeps a model from "fixing" the discrepancy it can see between
+  // `pwd` and the path it can also see.
+  const placement =
+    mode === 'drive'
       ? [
-          `- Your working directory is \`${cwd}\`, a subdirectory of a **persistent workspace**: files written there survive session expiry and are still there in your next session.`,
-          `- The workspace root is above you. Its other subdirectories belong to this user's other topics — reachable with relative paths, but do not write into them unless the user asks.`,
+          cwd
+            ? `- Your working directory is \`${cwd}\`, a folder on the user's **network drive**: files written there survive session expiry, are still there in your next session, and are what the user sees when they browse the drive.`
+            : "- Your working directory is the root of the user's **network drive**: files written there survive session expiry, are still there in your next session, and are what the user sees when they browse the drive.",
+          cwd
+            ? '- Other conversations may use other folders on the same drive at the same time. Keep to this folder unless the user asks otherwise.'
+            : '- Other conversations may use the same drive at the same time. Keep task-specific work in its own subfolder so unrelated tasks do not overwrite each other, and reuse what is already there when the user refers to earlier work.',
+          '- Only files on the drive persist. The machine itself starts fresh every session: packages you install and anything outside the drive are gone next time, so reinstall what a task needs rather than assuming it is still there.',
         ]
-      : [
-          '- Your working directory is a **persistent workspace**: files written there survive session expiry and are shared with the other conversation topics that use this workspace.',
-          '- Keep task-specific work in its own subdirectory so unrelated topics do not overwrite each other, and reuse what is already there when the user refers to earlier work.',
-        ];
+      : workingDir
+        ? [
+            `- You start in \`${workingDir}\`, this environment's checkout on the machine's own disk. The session saves it continuously into ${cwd ? `\`${cwd}\`, ` : ''}the **environment directory** on the user's drive, so what you leave here is what you find in your next session, and it is what the user sees when they browse the drive.`,
+            `- The drive is also mounted, and you may read from it, but that mounted path is the saved copy — not where this session works. Do not move the task there.`,
+            '- Packages installed by the environment are restored with it each session.',
+          ]
+        : [
+            `- Your working directory is ${cwd ? `\`${cwd}\`, ` : ''}an **environment directory** on the user's drive: its files and the packages its setup installed survive session expiry and are restored in your next session.`,
+            '- Other folders on the drive belong to other work. Do not write into them unless the user asks.',
+          ];
 
   return {
     sandbox_session_files:
@@ -263,17 +293,16 @@ export const formatSandboxStoragePromptVariables = ({
       // A model left to choose freely will sometimes clone or generate into a
       // scratch directory of its own — reasonable in a disposable sandbox,
       // wrong here: the result is thrown away with the session and the user
-      // never sees it in the file browser, which reads this directory. Said
-      // once, positively, rather than as a list of directories to avoid.
-      '- Every call starts you in that directory, and it is where the work belongs: checkouts, generated files and notes written anywhere else — `/root`, `/tmp`, a scratch directory of your own — are lost with the session and never appear in the user’s file browser. Stay where you start; if a step genuinely needs scratch space, say where you put it.',
-      // Deliberately does NOT send installs to `/tmp`. The workspace is network
+      // never sees it when browsing the drive, which reads this directory.
+      // Said once, positively, rather than as a list of directories to avoid.
+      '- Every call starts you in that directory, and it is where the work belongs: checkouts, generated files and notes written anywhere else — `/root`, `/tmp`, a scratch directory of your own — are lost with the session and never appear on the user’s drive. Stay where you start; if a step genuinely needs scratch space, say where you put it.',
+      // Deliberately does NOT send installs to `/tmp`. The drive is network
       // storage — an order of magnitude slower for the thousands of small files
       // a package install writes — but the answer is to let them land where the
       // toolchain normally puts them, not to relocate them somewhere the
-      // platform treats as scratch. Naming a directory here would also outlive
-      // whatever the platform does with those files later.
-      '- The workspace is network storage: fine for source files, results and notes, but slow for the thousands of small files a package install or a build writes. Install packages and build where the toolchain puts things by default, and keep the workspace for what is worth keeping.',
-      '- It has a storage quota, which covers what you leave in the workspace.',
+      // platform treats as scratch.
+      '- The drive is network storage: fine for source files, results and notes, but slow for the thousands of small files a package install or a build writes. Install packages and build where the toolchain puts things by default, and keep the drive for what is worth keeping.',
+      '- It has a storage quota, which covers what you leave on the drive.',
     ].join('\n'),
   };
 };

@@ -8,27 +8,30 @@ import {
 } from '@/store/chat/pendingSandboxSelection';
 import { topicSelectors } from '@/store/chat/selectors';
 
-export type SandboxMode = 'ephemeral' | 'persistent';
-
+/**
+ * Where a conversation's cloud sandbox works. Nothing chosen is a temporary
+ * sandbox; choosing a folder IS the choice to keep files:
+ *
+ * - `workingDirectory` — a folder on the drive, relative to its root (`.` is
+ *   the root itself);
+ * - `instanceId` — an environment directory: a folder initialized from a code
+ *   environment, with the packages its build installed.
+ *
+ * At most one is set; writing one clears the other.
+ */
 export interface SandboxSelection {
-  /** Only meaningful with `persistent`; absent means the workspace root. */
   instanceId?: string;
-  /**
-   * Absent means nothing has been chosen — which the server runs as ephemeral,
-   * but which the picker must not show as the temporary directory being
-   * PICKED. A choice is something the user made; the default is not one.
-   */
-  mode?: SandboxMode;
+  workingDirectory?: string;
 }
+
+/** Whether a selection keeps anything — a folder or an environment directory. */
+export const isPersistentSelection = (selection: SandboxSelection) =>
+  !!selection.instanceId || selection.workingDirectory !== undefined;
 
 /**
  * What the current conversation's cloud sandbox keeps, read and written from
- * one place.
- *
- * Two surfaces answer this — the execution-device menu (keep files or not) and
- * the working-directory chip (which directory) — and both must see the same
- * state, or a toggle in one would not move the other. Absent means ephemeral,
- * which is how the server reads it too (`sandboxMode !== 'persistent'`).
+ * one place — the composer's chip and the working panel's file tree must see
+ * the same state, or a pick in one would not move the other.
  *
  * Before a topic exists the choice is buffered by agent and carried by the
  * first send; see `pendingSandboxSelection`.
@@ -36,25 +39,24 @@ export interface SandboxSelection {
  * `scopeTopicId` is the conversation the caller belongs to; `null` means it has
  * no topic yet. Omitted, it follows the global active topic.
  */
-export const useSandboxMode = (agentId: string, scopeTopicId?: string | null) => {
+export const useSandboxPlacement = (agentId: string, scopeTopicId?: string | null) => {
   const activeTopicId = useChatStore((s) => s.activeTopicId);
   const topicId = scopeTopicId === undefined ? activeTopicId : scopeTopicId;
   const topicMetadata = useChatStore((s) =>
     topicId ? topicSelectors.getTopicById(topicId)(s)?.metadata : undefined,
   );
   const topicInstanceId = topicMetadata?.sandboxInstanceId;
-  const topicMode = topicMetadata?.sandboxMode;
+  const topicWorkingDirectory = topicMetadata?.sandboxWorkingDirectory;
   const updateTopicMetadata = useChatStore((s) => s.updateTopicMetadata);
   // The pending value lives outside React, so this subscribes to it the way a
   // store would be subscribed to. Every component using this hook re-renders
-  // on a write, not just the one that wrote — a local force-update here left
-  // the other reader showing the old value.
+  // on a write, not just the one that wrote.
   const pending = useSyncExternalStore(subscribePendingSandboxSelection, () =>
     getPendingSandboxSelection(agentId),
   );
 
   const selection: SandboxSelection = topicId
-    ? { instanceId: topicInstanceId, mode: topicMode }
+    ? { instanceId: topicInstanceId, workingDirectory: topicWorkingDirectory }
     : (pending ?? {});
 
   const setSelection = useCallback(
@@ -64,25 +66,16 @@ export const useSandboxMode = (agentId: string, scopeTopicId?: string | null) =>
         return;
       }
 
-      // Written whole, both fields every time. Deriving the mode from "did they
-      // pick an instance" is what made this a one-way switch: nothing could then
-      // express "keep nothing", so a conversation that once touched this menu
-      // could never go back to a throwaway box.
+      // Written whole, both fields every time: a folder and an environment
+      // directory are alternatives, and a stale half left behind would come
+      // back the moment the other was cleared.
       await updateTopicMetadata(topicId, {
         sandboxInstanceId: next.instanceId,
-        sandboxMode: next.mode,
+        sandboxWorkingDirectory: next.instanceId ? undefined : next.workingDirectory,
       });
     },
     [agentId, topicId, updateTopicMetadata],
   );
 
-  // Turning persistence off also drops the instance: a binding kept behind an
-  // ephemeral run would silently come back the next time the switch is on.
-  const setMode = useCallback(
-    (mode: SandboxMode) =>
-      setSelection(mode === 'persistent' ? { ...selection, mode } : { mode: 'ephemeral' }),
-    [selection, setSelection],
-  );
-
-  return { selection, setMode, setSelection, topicId: topicId ?? undefined };
+  return { selection, setSelection, topicId: topicId ?? undefined };
 };
