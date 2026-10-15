@@ -165,5 +165,7 @@ export default {
   'workingDirectory.drive.folderNotEmpty':
     'This folder already has files in it. Only a new or empty folder can be initialized from an environment.',
   'workingDirectory.drive.folderTaken': 'An environment directory with this name already exists.',
+  'workingDirectory.drive.foldersLoadFailed':
+    'Could not load this folder on your drive. Retry, or go back to the drive’s top level.',
   'workingDirectory.drive.readOnly': 'Environment directories are read-only here.',
 };

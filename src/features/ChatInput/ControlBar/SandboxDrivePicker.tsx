@@ -23,6 +23,7 @@ import { openSandboxStorageUpsell } from '@/business/client/features/SandboxStor
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { openSandboxDirectoryModal } from '@/features/WorkingDirectory';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import { refreshProjectFiles } from '@/services/projectFile';
 import { sandboxStorageService } from '@/services/sandboxStorage';
 
 import OptionRow from './OptionRow';
@@ -146,7 +147,7 @@ const SandboxDrivePicker = memo<SandboxDrivePickerProps>(
     // Whether the pick still holds, asked of the same resolver the run uses:
     // a folder deleted on a shared drive, or an environment directory gone,
     // sends the next run to a temporary sandbox — and the chip says so first.
-    const { data: placement } = useSWR(
+    const { data: placement, mutate: revalidatePlacement } = useSWR(
       entitled && topicId && persistent
         ? ['sandbox-drive-placement', topicId, value.instanceId ?? '', value.workingDirectory ?? '']
         : null,
@@ -155,21 +156,37 @@ const SandboxDrivePicker = memo<SandboxDrivePickerProps>(
     );
     const fallback = placement?.fallback;
 
+    // Picking the folder already held keeps the keys unchanged, so SWR would
+    // go on showing the old answers — "no longer exists" on the chip and an
+    // unreadable tree in the working panel, for a folder just re-created and
+    // picked again. Ask once more after every pick.
+    const pick = async (selection: SandboxSelection) => {
+      await onChange(selection);
+      void revalidatePlacement();
+      if (topicId && !selection.instanceId && selection.workingDirectory !== undefined) {
+        const folder = selection.workingDirectory === '.' ? '' : selection.workingDirectory;
+        void refreshProjectFiles(`sandbox:${topicId}`, folder);
+      }
+    };
+
     const select = async (selection: SandboxSelection) => {
       setOpen(false);
-      await onChange(selection);
+      await pick(selection);
     };
 
     const openBrowser = () => {
       setOpen(false);
       openSandboxDirectoryModal({
         agentIsPublic,
+        // A folder that is gone cannot be listed; start from the top instead.
         defaultPath:
-          value.workingDirectory && value.workingDirectory !== '.'
+          value.workingDirectory &&
+          value.workingDirectory !== '.' &&
+          fallback !== 'directoryMissing'
             ? value.workingDirectory
             : undefined,
         isSharedDrive: !!workspaceId,
-        onPick: (pick) => onChange(pick),
+        onPick: pick,
         topicId,
       });
     };

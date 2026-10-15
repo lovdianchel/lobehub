@@ -51,6 +51,7 @@
   "workingDirectory.drive.environmentBadge": "环境",
   "workingDirectory.drive.folderNotEmpty": "该文件夹已有内容，只能用环境初始化新建或空的文件夹。",
   "workingDirectory.drive.folderTaken": "已有同名的环境目录。",
+  "workingDirectory.drive.foldersLoadFailed": "无法加载网盘中的这个文件夹，请重试或返回网盘根目录。",
   "workingDirectory.drive.inUseDesc": "正在被其他话题使用",
   "workingDirectory.drive.initializeHint": "将在网盘根目录创建该文件夹，并用所选环境初始化：克隆仓库并运行安装命令。",
   "workingDirectory.drive.initializeWith": "用环境初始化",

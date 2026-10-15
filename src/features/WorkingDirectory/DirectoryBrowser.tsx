@@ -202,7 +202,7 @@ export const DirectoryBrowser = ({
             {error ? (
               <Flexbox align={'center'} gap={8} padding={16} role={'alert'}>
                 <Text style={{ textAlign: 'center', whiteSpace: 'normal' }} type={'secondary'}>
-                  {t('workingDirectory.foldersLoadFailed')}
+                  {t(source.listErrorKey ?? 'workingDirectory.foldersLoadFailed')}
                 </Text>
                 <Button disabled={loading} onClick={() => void retry()}>
                   {tCommon('retry')}

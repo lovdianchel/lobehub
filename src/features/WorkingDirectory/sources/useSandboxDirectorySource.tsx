@@ -172,6 +172,7 @@ export const useSandboxDirectorySource = ({
           return 'workingDirectory.drive.folderTaken';
         if (code === 'INSTANCE_READ_ONLY') return 'workingDirectory.drive.readOnly';
       },
+      listErrorKey: 'workingDirectory.drive.foldersLoadFailed',
       renderNewFolderOptions: ({ onChange, value }) => (
         <Flexbox gap={4}>
           <Flexbox horizontal align={'center'} gap={8}>

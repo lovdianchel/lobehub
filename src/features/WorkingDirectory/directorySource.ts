@@ -65,6 +65,11 @@ export interface DirectorySource {
   /** Translation key for an error the source's create threw, or `undefined` for the generic one. */
   folderErrorKey?: (error: unknown) => string | undefined;
   /**
+   * Translation key for a listing that failed, when the generic one — which
+   * speaks of a device connection and a typed path — does not fit the source.
+   */
+  listErrorKey?: 'workingDirectory.drive.foldersLoadFailed';
+  /**
    * Extra fields in the new-folder row, beside the name — the drive offers a
    * code environment to initialize the folder from there.
    */

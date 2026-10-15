@@ -51,6 +51,7 @@
   "workingDirectory.drive.environmentBadge": "Environment",
   "workingDirectory.drive.folderNotEmpty": "This folder already has files in it. Only a new or empty folder can be initialized from an environment.",
   "workingDirectory.drive.folderTaken": "An environment directory with this name already exists.",
+  "workingDirectory.drive.foldersLoadFailed": "Could not load this folder on your drive. Retry, or go back to the drive’s top level.",
   "workingDirectory.drive.inUseDesc": "Another conversation is using this environment directory",
   "workingDirectory.drive.initializeHint": "The folder is created at the drive root and set up from this environment: the repository is cloned and its setup runs.",
   "workingDirectory.drive.initializeWith": "Initialize with",
