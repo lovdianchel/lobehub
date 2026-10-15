@@ -206,10 +206,13 @@ export const useSandboxDirectorySource = ({
           isRoot ? ['sandbox-drive-instances', workspaceId ?? '', topicId ?? ''] : null,
           () => sandboxStorageService.listInstances({ topicId, withSizes: false }),
           {
-            refreshInterval: (latest) =>
-              (latest?.instances ?? []).some((instance) => instance.status === 'pending')
+            refreshInterval: (latest) => {
+              const listed = latest?.instances ?? [];
+
+              return listed.some((instance) => instance.status === 'pending')
                 ? BUILD_REFRESH_MS
-                : 0,
+                : 0;
+            },
             revalidateOnFocus: false,
           },
         );
