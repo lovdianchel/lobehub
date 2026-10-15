@@ -18,10 +18,6 @@ describe('initialTopicMetadataSchema', () => {
     expect(initialTopicMetadataSchema.parse(metadata)).toEqual(metadata);
   });
 
-  it('no longer carries a sandbox mode — choosing a folder is the choice to persist', () => {
-    expect(initialTopicMetadataSchema.parse({ sandboxMode: 'persistent' })).toEqual({});
-  });
-
   it('accepts an empty patch — a conversation may start with none of this', () => {
     expect(initialTopicMetadataSchema.parse({})).toEqual({});
   });

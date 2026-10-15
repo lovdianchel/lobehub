@@ -207,7 +207,7 @@ export const useSandboxDirectorySource = ({
           () => sandboxStorageService.listInstances({ topicId, withSizes: false }),
           {
             refreshInterval: (latest) =>
-              latest?.instances.some((instance) => instance.status === 'pending')
+              (latest?.instances ?? []).some((instance) => instance.status === 'pending')
                 ? BUILD_REFRESH_MS
                 : 0,
             revalidateOnFocus: false,
